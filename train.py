@@ -110,8 +110,8 @@ def main():
         start_epoch = checkpoint['epoch']
 
     SCHP_AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
-    schp_model = DataParallelModel(SCHP_AugmentCE2P)
-    schp_model.cuda()
+    schp_model = DataParallelModel(SCHP_AugmentCE2P)    #TODO Doubt
+    schp_model.cuda()   
 
     if os.path.exists(args.schp_restore):
         print('Resuming schp checkpoint from {}'.format(args.schp_restore))

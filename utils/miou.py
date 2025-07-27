@@ -65,7 +65,7 @@ def compute_mean_ioU(preds, scales, centers, num_classes, datadir, input_size=[4
 
     confusion_matrix = np.zeros((num_classes, num_classes))
 
-    for i, pred_out in enumerate(preds):
+    for i, pred_out in enumerate(preds):        #Shape of pred_out: (H, W)
         im_name = val_id[i]
         gt_path = os.path.join(datadir, dataset + '_segmentations', im_name + '.png')
         gt = np.array(PILImage.open(gt_path))
@@ -84,12 +84,12 @@ def compute_mean_ioU(preds, scales, centers, num_classes, datadir, input_size=[4
 
         confusion_matrix += get_confusion_matrix(gt, pred, num_classes)
 
-    pos = confusion_matrix.sum(1)
-    res = confusion_matrix.sum(0)
-    tp = np.diag(confusion_matrix)
+    pos = confusion_matrix.sum(1)               #Shape: (num_class,). For an index c, gives the total actual pixels for class c
+    res = confusion_matrix.sum(0)               #Shape: (num_class,). For an index c, gives the total predicted pixels for class c
+    tp = np.diag(confusion_matrix)              #Shape: (num_class,). For an index c, gives the total correctly predicted pixels for class c
 
-    pixel_accuracy = (tp.sum() / pos.sum()) * 100
-    mean_accuracy = ((tp / np.maximum(1.0, pos)).mean()) * 100
+    pixel_accuracy = (tp.sum() / pos.sum()) * 100                   #Total correctly predicted pixels / Total actual pixels
+    mean_accuracy = ((tp / np.maximum(1.0, pos)).mean()) * 100      #Mean of per-class accuracy. 
     IoU_array = (tp / np.maximum(1.0, pos + res - tp))
     IoU_array = IoU_array * 100
     mean_IoU = IoU_array.mean()

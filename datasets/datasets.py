@@ -185,7 +185,7 @@ class LIPDataValSet(data.Dataset):
         input = self.transform(input)
         flip_input = input.flip(dims=[-1])
         if self.flip:
-            batch_input_im = torch.stack([input, flip_input])
+            batch_input_im = torch.stack([input, flip_input])       #TODO Imp: If flip, then concat both the input and flipped input
         else:
             batch_input_im = input
 

@@ -86,27 +86,27 @@ def multi_scale_testing(model, batch_input_im, crop_size=[473, 473], flip=True, 
     if len(batch_input_im.shape) > 4:
         batch_input_im = batch_input_im.squeeze()
     if len(batch_input_im.shape) == 3:
-        batch_input_im = batch_input_im.unsqueeze(0)
+        batch_input_im = batch_input_im.unsqueeze(0)        
 
     interp = torch.nn.Upsample(size=crop_size, mode='bilinear', align_corners=True)
     ms_outputs = []
     for s in multi_scales:
         interp_im = torch.nn.Upsample(scale_factor=s, mode='bilinear', align_corners=True)
         scaled_im = interp_im(batch_input_im)
-        parsing_output = model(scaled_im)
-        parsing_output = parsing_output[0][-1]
-        output = parsing_output[0]
+        parsing_output = model(scaled_im)                                       #Multiple results  (Refer to AugmentCE2P.py)
+        parsing_output = parsing_output[0][-1]                                  #Selects the fusion_result. Shape: (B, C, H, W). B -> Batch, C -> num classes
+        output = parsing_output[0]                                              
         if flip:
-            flipped_output = parsing_output[1]
+            flipped_output = parsing_output[1]                                  #If flip is true, then a batch_img is made of two batch instances, one for the og and the other for the flipped version. See datasets.py
             flipped_output[14:20, :, :] = flipped_output[flipped_idx, :, :]
             output += flipped_output.flip(dims=[-1])
-            output *= 0.5
+            output *= 0.5                                                       #Shape: (C, H, W). C is the number of classes (20).
         output = interp(output.unsqueeze(0))
         ms_outputs.append(output[0])
-    ms_fused_parsing_output = torch.stack(ms_outputs)
-    ms_fused_parsing_output = ms_fused_parsing_output.mean(0)
-    ms_fused_parsing_output = ms_fused_parsing_output.permute(1, 2, 0)  # HWC
-    parsing = torch.argmax(ms_fused_parsing_output, dim=2)
+    ms_fused_parsing_output = torch.stack(ms_outputs)                           #Shape: (MS, C, H, W). MS refers to multi-scale dim, number of scales used.
+    ms_fused_parsing_output = ms_fused_parsing_output.mean(0)                   #Shape: (C, H, W)
+    ms_fused_parsing_output = ms_fused_parsing_output.permute(1, 2, 0)  # HWC   #Shape: (H, W, C)
+    parsing = torch.argmax(ms_fused_parsing_output, dim=2)                      #Shape: (H, W)
     parsing = parsing.data.cpu().numpy()
     ms_fused_parsing_output = ms_fused_parsing_output.data.cpu().numpy()
     return parsing, ms_fused_parsing_output
@@ -124,10 +124,10 @@ def main():
     cudnn.benchmark = True
     cudnn.enabled = True
 
-    h, w = map(int, args.input_size.split(','))
+    h, w = map(int, args.input_size.split(','))     #Shape: (473, 473)
     input_size = [h, w]
 
-    model = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=None)
+    model = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=None)   #Initialize A-CE2P model (not pretrained)
 
     IMAGE_MEAN = model.mean
     IMAGE_STD = model.std
@@ -159,7 +159,7 @@ def main():
     testloader = data.DataLoader(lip_test_dataset, batch_size=args.batch_size, shuffle=False, pin_memory=True)
 
     # Load model weight
-    state_dict = torch.load(args.model_restore)['state_dict']
+    state_dict = torch.load(args.model_restore)['state_dict']       #Loads pretrained weights
     from collections import OrderedDict
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
@@ -198,7 +198,7 @@ def main():
                 output_im.putpalette(palette)
                 output_im.save(parsing_result_path)
 
-            parsing_preds.append(parsing)
+            parsing_preds.append(parsing)       #Shape: (B, H, W)
     assert len(parsing_preds) == num_samples
     mIoU = compute_mean_ioU(parsing_preds, scales, centers, args.num_classes, args.data_dir, input_size)
     print(mIoU)

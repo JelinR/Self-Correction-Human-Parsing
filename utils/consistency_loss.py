@@ -22,9 +22,9 @@ class ConsistencyLoss(nn.Module):
         self.ignore_index=ignore_index
 
     def forward(self, parsing, edge, label):
-        parsing_pre = torch.argmax(parsing, dim=1)
+        parsing_pre = torch.argmax(parsing, dim=1)                  #Shape: (B, C, H, W) -> (B, H, W)
         parsing_pre[label==self.ignore_index]=self.ignore_index
-        generated_edge = generate_edge_tensor(parsing_pre)
+        generated_edge = generate_edge_tensor(parsing_pre)          #Get edges for parsing/fusion result
         edge_pre = torch.argmax(edge, dim=1)
         v_generate_edge = generated_edge[label!=255]
         v_edge_pre = edge_pre[label!=255]

@@ -48,24 +48,24 @@ class CriterionAll(nn.Module):
         Returns:
             Calculated Loss.
         """
-        h, w = target[0].size(1), target[0].size(2)
+        h, w = target[0].size(1), target[0].size(2)                 #Size of GT segmentation
 
-        pos_num = torch.sum(target[1] == 1, dtype=torch.float)
-        neg_num = torch.sum(target[1] == 0, dtype=torch.float)
+        pos_num = torch.sum(target[1] == 1, dtype=torch.float)      #Number of edge pixels in GT edges
+        neg_num = torch.sum(target[1] == 0, dtype=torch.float)      #Number of non-edge pixels in GT edges
 
-        weight_pos = neg_num / (pos_num + neg_num)
-        weight_neg = pos_num / (pos_num + neg_num)
+        weight_pos = neg_num / (pos_num + neg_num)                  #Ratio of non-edge pixels in GT edges
+        weight_neg = pos_num / (pos_num + neg_num)                  #Ratio of edge pixels in GT edges
         weights = torch.tensor([weight_neg, weight_pos])  # edge loss weight
 
         loss = 0
 
         # loss for segmentation
         preds_parsing = preds[0]
-        for pred_parsing in preds_parsing:
+        for pred_parsing in preds_parsing:                                      #TODO Doubt: Does this go over both the parsing and fusion results?
             scale_pred = F.interpolate(input=pred_parsing, size=(h, w),
-                                       mode='bilinear', align_corners=True)
+                                       mode='bilinear', align_corners=True)     #Shape: (B, C, H, W)
 
-            loss += 0.5 * self.lamda_1 * self.lovasz(scale_pred, target[0])
+            loss += 0.5 * self.lamda_1 * self.lovasz(scale_pred, target[0])     #TODO Doubt: So, we have two loss contributions to the parsing loss?
             if target[2] is None:
                 loss += 0.5 * self.lamda_1 * self.criterion(scale_pred, target[0])
             else:
@@ -73,7 +73,7 @@ class CriterionAll(nn.Module):
                                                 mode='bilinear', align_corners=True)
                 soft_scale_pred = moving_average(soft_scale_pred, to_one_hot(target[0], num_cls=self.num_classes),
                                                  1.0 / (cycle_n + 1.0))
-                loss += 0.5 * self.lamda_1 * self.kldiv(scale_pred, soft_scale_pred, target[0])
+                loss += 0.5 * self.lamda_1 * self.kldiv(scale_pred, soft_scale_pred, target[0])     #KL-Div btw preds and soft_preds
 
         # loss for edge
         preds_edge = preds[1]
@@ -88,12 +88,12 @@ class CriterionAll(nn.Module):
                                                 mode='bilinear', align_corners=True)
                 soft_scale_edge = moving_average(soft_scale_edge, to_one_hot(target[1], num_cls=2),
                                                  1.0 / (cycle_n + 1.0))
-                loss += self.lamda_2 * self.kldiv(scale_pred, soft_scale_edge, target[0])
+                loss += self.lamda_2 * self.kldiv(scale_pred, soft_scale_edge, target[0])       #KL-Div btw edge_preds and soft_edge_preds
 
         # consistency regularization
         preds_parsing = preds[0]
         preds_edge = preds[1]
-        for pred_parsing in preds_parsing:
+        for pred_parsing in preds_parsing:                                          #Iterates through [parsing_result, fusion_result]
             scale_pred = F.interpolate(input=pred_parsing, size=(h, w),
                                        mode='bilinear', align_corners=True)
             scale_edge = F.interpolate(input=preds_edge[0], size=(h, w),
