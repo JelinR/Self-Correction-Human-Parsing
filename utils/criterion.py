@@ -60,14 +60,16 @@ class CriterionAll(nn.Module):
         loss = 0
 
         # loss for segmentation
+        #We have two loss contributions to the parsing loss. 
+        # One is comparison with target, and the other with soft_preds (updated labels)
         preds_parsing = preds[0]
-        for pred_parsing in preds_parsing:                                      #TODO Doubt: Does this go over both the parsing and fusion results?
+        for pred_parsing in preds_parsing:                                      #Goes over both the parsing and fusion results
             scale_pred = F.interpolate(input=pred_parsing, size=(h, w),
                                        mode='bilinear', align_corners=True)     #Shape: (B, C, H, W)
 
-            loss += 0.5 * self.lamda_1 * self.lovasz(scale_pred, target[0])     #TODO Doubt: So, we have two loss contributions to the parsing loss?
+            loss += 0.5 * self.lamda_1 * self.lovasz(scale_pred, target[0])     #miou loss
             if target[2] is None:
-                loss += 0.5 * self.lamda_1 * self.criterion(scale_pred, target[0])
+                loss += 0.5 * self.lamda_1 * self.criterion(scale_pred, target[0])      #Class loss. KL-Div btw pred and GT label
             else:
                 soft_scale_pred = F.interpolate(input=target[2], size=(h, w),
                                                 mode='bilinear', align_corners=True)
