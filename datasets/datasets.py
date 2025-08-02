@@ -22,7 +22,7 @@ from utils.transforms import get_affine_transform
 
 class LIPDataSet(data.Dataset):
     def __init__(self, root, dataset, crop_size=[473, 473], scale_factor=0.25,
-                 rotation_factor=30, ignore_label=255, transform=None):
+                 rotation_factor=30, ignore_label=255, transform=None, num_samples=-1):
         self.root = root
         self.aspect_ratio = crop_size[1] * 1.0 / crop_size[0]
         self.crop_size = np.asarray(crop_size)
@@ -35,6 +35,11 @@ class LIPDataSet(data.Dataset):
 
         list_path = os.path.join(self.root, self.dataset + '_id.txt')
         train_list = [i_id.strip() for i_id in open(list_path)]
+
+        ### TODO CHANGED: Added
+        if num_samples > 0:
+            train_list = train_list[:num_samples]
+        ###
 
         self.train_list = train_list
         self.number_samples = len(self.train_list)
@@ -65,7 +70,8 @@ class LIPDataSet(data.Dataset):
 
         im = cv2.imread(im_path, cv2.IMREAD_COLOR)
         h, w, _ = im.shape
-        parsing_anno = np.zeros((h, w), dtype=np.long)
+        # parsing_anno = np.zeros((h, w), dtype=np.long)
+        parsing_anno = np.zeros((h, w), dtype=np.int64)     #TODO CHANGED
 
         # Get person center and scale
         person_center, s = self._box2cs([0, 0, w - 1, h - 1])

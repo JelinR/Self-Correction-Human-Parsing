@@ -77,6 +77,8 @@ class CriterionAll(nn.Module):
                                                  1.0 / (cycle_n + 1.0))
                 loss += 0.5 * self.lamda_1 * self.kldiv(scale_pred, soft_scale_pred, target[0])     #KL-Div btw preds and soft_preds
 
+        loss_seg = loss
+
         # loss for edge
         preds_edge = preds[1]
         for pred_edge in preds_edge:
@@ -92,6 +94,8 @@ class CriterionAll(nn.Module):
                                                  1.0 / (cycle_n + 1.0))
                 loss += self.lamda_2 * self.kldiv(scale_pred, soft_scale_edge, target[0])       #KL-Div btw edge_preds and soft_edge_preds
 
+        loss_edge = loss - loss_seg
+
         # consistency regularization
         preds_parsing = preds[0]
         preds_edge = preds[1]
@@ -102,11 +106,16 @@ class CriterionAll(nn.Module):
                                        mode='bilinear', align_corners=True)
             loss += self.lamda_3 * self.reg(scale_pred, scale_edge, target[0])
 
-        return loss
+        loss_consistency = loss - loss_edge - loss_seg
+
+        return loss, loss_seg, loss_edge, loss_consistency
 
     def forward(self, preds, target, cycle_n=None):
-        loss = self.parsing_loss(preds, target, cycle_n)
-        return loss
+        # loss = self.parsing_loss(preds, target, cycle_n)
+        # return loss
+
+        loss, loss_seg, loss_edge, loss_cons = self.parsing_loss(preds, target, cycle_n)
+        return loss, loss_seg, loss_edge, loss_cons
 
     def _generate_weights(self, masks, num_classes):
         """

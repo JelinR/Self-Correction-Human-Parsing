@@ -1,9 +1,10 @@
 from __future__ import absolute_import
 
-from networks.AugmentCE2P import resnet101
+from networks.AugmentCE2P import resnet101, resnet101_mod
 
 __factory = {
     'resnet101': resnet101,
+    'resnet101_mod': resnet101_mod
 }
 
 

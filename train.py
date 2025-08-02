@@ -15,6 +15,7 @@ import os
 import json
 import timeit
 import argparse
+import numpy as np
 
 import torch
 import torch.optim as optim
@@ -31,6 +32,8 @@ from utils.criterion import CriterionAll
 from utils.encoding import DataParallelModel, DataParallelCriterion
 from utils.warmup_scheduler import SGDRScheduler
 
+from tqdm import tqdm
+from time import time
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -43,6 +46,7 @@ def get_arguments():
     parser.add_argument("--arch", type=str, default='resnet101')
     # Data Preference
     parser.add_argument("--data-dir", type=str, default='./data/LIP')
+    parser.add_argument("--num_samples", type=int, default=-1)              #TODO CHANGED: Added
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--input-size", type=str, default='473,473')
     parser.add_argument("--num-classes", type=int, default=20)
@@ -66,6 +70,8 @@ def get_arguments():
     parser.add_argument("--lambda-s", type=float, default=1, help='segmentation loss weight')
     parser.add_argument("--lambda-e", type=float, default=1, help='edge loss weight')
     parser.add_argument("--lambda-c", type=float, default=0.1, help='segmentation-edge consistency loss weight')
+
+    parser.add_argument("--freeze_modules", action="store_true")
     return parser.parse_args()
 
 
@@ -92,6 +98,18 @@ def main():
 
     # Model Initialization
     AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
+    
+    ##TODO CHANGED: Added
+    if args.freeze_modules:
+        for param in AugmentCE2P.parameters():
+            param.requires_grad = False
+
+        for param in AugmentCE2P.check.parameters():
+            param.requires_grad = True
+        
+        print(f"Parameter Freezing done")
+    ##
+    
     model = DataParallelModel(AugmentCE2P)
     model.cuda()
 
@@ -106,8 +124,22 @@ def main():
     if os.path.exists(restore_from):
         print('Resume training from {}'.format(restore_from))
         checkpoint = torch.load(restore_from)
-        model.load_state_dict(checkpoint['state_dict'])
-        start_epoch = checkpoint['epoch']
+        # model.load_state_dict(checkpoint['state_dict']) #TODO CHANGED: Commented
+        # start_epoch = checkpoint['epoch']
+
+        model.load_state_dict(checkpoint['state_dict'], strict=False) #TODO CHANGED: Added strict=False
+        if "epoch" in checkpoint:
+            start_epoch = checkpoint["epoch"]
+
+    # total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+
+    # trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print(f"Total params:     {total_params:,}")
+    print(f"Trainable params: {trainable_params:,}")
+    print(f"Frozen params:    {total_params - trainable_params:,}")
 
     SCHP_AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
     schp_model = DataParallelModel(SCHP_AugmentCE2P)    #TODO Doubt
@@ -144,14 +176,19 @@ def main():
                                  std=IMAGE_STD),
         ])
 
-    train_dataset = LIPDataSet(args.data_dir, 'train', crop_size=input_size, transform=transform)
+    train_dataset = LIPDataSet(args.data_dir, 'train', crop_size=input_size, transform=transform, num_samples=args.num_samples)
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size * len(gpus),
                                    num_workers=16, shuffle=True, pin_memory=True, drop_last=True)
     print('Total training samples: {}'.format(len(train_dataset)))
 
     # Optimizer Initialization
-    optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum,
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    optimizer = optim.SGD(trainable, lr=args.learning_rate, momentum=args.momentum,
                           weight_decay=args.weight_decay)
+
+    #TODO CHANGED: Commented
+    # optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum,
+    #                       weight_decay=args.weight_decay)
 
     lr_scheduler = SGDRScheduler(optimizer, total_epoch=args.epochs,
                                  eta_min=args.learning_rate / 100, warmup_epoch=10,
@@ -159,13 +196,21 @@ def main():
                                  cyclical_epoch=args.cycle_epochs)
 
     total_iters = args.epochs * len(train_loader)
+    batch_iters = len(train_loader)
+
     start = timeit.default_timer()
     for epoch in range(start_epoch, args.epochs):
-        lr_scheduler.step(epoch=epoch)
-        lr = lr_scheduler.get_lr()[0]
+        # lr_scheduler.step(epoch=epoch)    #TODO CHANGED: Warning saying that this should be after optimizer.step()
+        # lr = lr_scheduler.get_lr()[0]
+
+        track_loss = []
+        track_loss_seg = []
+        track_loss_edge = []
+        track_loss_cons = []
 
         model.train()
-        for i_iter, batch in enumerate(train_loader):
+        for i_iter, batch in enumerate(tqdm(train_loader)):
+            
             i_iter += len(train_loader) * epoch
 
             images, labels, _ = batch
@@ -175,10 +220,17 @@ def main():
             labels = labels.type(torch.cuda.LongTensor)
             edges = edges.type(torch.cuda.LongTensor)
 
+            # ### TODO CHANGED: Added
+            # images = images.cuda(non_blocking=True)
+            # labels = labels.cuda(non_blocking=True)
+            # edges  = edges.cuda(non_blocking=True)
+            # ###
+
             preds = model(images)
 
             # Online Self Correction Cycle with Label Refinement
             if cycle_n >= 1:
+                print(f"Inside the cycle")
                 with torch.no_grad():
                     soft_preds = schp_model(images)
                     soft_parsing = []
@@ -192,15 +244,40 @@ def main():
                 soft_preds = None
                 soft_edges = None
 
-            loss = criterion(preds, [labels, edges, soft_preds, soft_edges], cycle_n)
+            loss, loss_seg, loss_edge, loss_cons = criterion(preds, [labels, edges, soft_preds, soft_edges], cycle_n)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if i_iter % 100 == 0:
-                print('iter = {} of {} completed, lr = {}, loss = {}'.format(i_iter, total_iters, lr,
-                                                                             loss.data.cpu().numpy()))
+            # if i_iter % 100 == 0:
+            #     print('iter = {} of {} completed, lr = {}, loss = {}'.format(i_iter, total_iters, lr,
+            #                                                                  loss.data.cpu().numpy()))
+            # print(f"Epoch : {epoch}, Iter: {curr_iter}/{batch_iters}, Loss: {loss}, Seg Loss: {loss_seg}, Edge Loss: {loss_edge}, Cons Loss: {loss_cons} ")
+
+            track_loss.append(loss.detach().cpu().numpy())
+            track_loss_seg.append(loss_seg.detach().cpu().numpy())
+            track_loss_edge.append(loss_edge.detach().cpu().numpy())
+            track_loss_cons.append(loss_cons.detach().cpu().numpy())
+
+        lr_scheduler.step()      #TODO CHANGED: Added from start of loop
+        # lr = lr_scheduler.get_lr()[0]
+
+        #Write Losses to file
+        mean_loss = np.mean(track_loss)
+        mean_loss_seg = np.mean(track_loss_seg)
+        mean_loss_edge = np.mean(track_loss_edge)
+        mean_loss_cons = np.mean(track_loss_cons)
+
+        with open(f"{args.log_dir}/loss_per_epoch.txt", "a" if epoch > 0 else "w") as f:
+            f.write(f"{epoch}, {mean_loss}, {mean_loss_seg}, {mean_loss_edge}, {mean_loss_cons}\n")
+
+
+        schp.save_schp_checkpoint({
+            "epoch": epoch + 1,
+            "state_dict": model.state_dict()
+        }, False, args.log_dir, filename="checkpoint.pth.tar")
+        
         if (epoch + 1) % (args.eval_epochs) == 0:
             schp.save_schp_checkpoint({
                 'epoch': epoch + 1,
