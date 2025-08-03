@@ -77,7 +77,7 @@ class CriterionAll(nn.Module):
                                                  1.0 / (cycle_n + 1.0))
                 loss += 0.5 * self.lamda_1 * self.kldiv(scale_pred, soft_scale_pred, target[0])     #KL-Div btw preds and soft_preds
 
-        loss_seg = loss
+        loss_seg = loss.detach().clone()
 
         # loss for edge
         preds_edge = preds[1]
@@ -94,7 +94,7 @@ class CriterionAll(nn.Module):
                                                  1.0 / (cycle_n + 1.0))
                 loss += self.lamda_2 * self.kldiv(scale_pred, soft_scale_edge, target[0])       #KL-Div btw edge_preds and soft_edge_preds
 
-        loss_edge = loss - loss_seg
+        loss_edge = loss.detach().clone() - loss_seg
 
         # consistency regularization
         preds_parsing = preds[0]
@@ -104,9 +104,13 @@ class CriterionAll(nn.Module):
                                        mode='bilinear', align_corners=True)
             scale_edge = F.interpolate(input=preds_edge[0], size=(h, w),
                                        mode='bilinear', align_corners=True)
-            loss += self.lamda_3 * self.reg(scale_pred, scale_edge, target[0])
+            
+            cons_term = self.reg(scale_pred, scale_edge, target[0])
+            loss += self.lamda_3 * cons_term
+            
+            #loss += self.lamda_3 * self.reg(scale_pred, scale_edge, target[0])
 
-        loss_consistency = loss - loss_edge - loss_seg
+        loss_consistency = loss.detach().clone() - loss_edge - loss_seg
 
         return loss, loss_seg, loss_edge, loss_consistency
 

@@ -54,7 +54,7 @@ class Bottleneck(nn.Module):
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
                                padding=dilation * multi_grid, dilation=dilation * multi_grid, bias=False)
         self.bn2 = BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)       #Increase channel to match inplanes. inplanes = expansion * planes, ensured in make_layer.
         self.bn3 = BatchNorm2d(planes * 4)
         self.relu = nn.ReLU(inplace=False)
         self.relu_inplace = nn.ReLU(inplace=True)
@@ -241,19 +241,73 @@ class Decoder_Module(nn.Module):
         seg = self.conv4(x)
         return seg, x
 
-class Check_Module(nn.Module):
+class Fusion_Conv_Attention(nn.Module):
+    def __init__(self, num_classes, C=1024, reduction=64, k_spatial=5, spatial_groups=4):
+        """
+        C              : Channels of input
+        reduction      : reduction factor for channel-attention MLP
+        k_spatial      : kernel size for spatial gating conv
+        spatial_groups : how many channel-groups to gate independently
+        """
+        super().__init__()
+        G = spatial_groups
+        assert C % G == 0, "total channels must be divisible by spatial_groups"
 
-    def __init__(self):
-        super(Check_Module, self).__init__()
 
-        self.check_conv = nn.Sequential(
-            nn.Conv2d(1024, 1024, kernel_size=1, padding=0, dilation=1, bias=False),
-            InPlaceABNSync(1024)
+        #Grouped spatial attention
+        self.sa = nn.Sequential(
+            nn.Conv2d(
+            in_channels=C,
+            out_channels=G,
+            kernel_size=k_spatial,
+            padding=k_spatial//2,
+            groups=G,
+            bias=True
+        ),
+        nn.Sigmoid()
+        )
+
+        #Channel attention
+        self.ca = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),                 # → (B, C, 1, 1)
+            nn.Conv2d(C, C//reduction, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(C//reduction, C, 1, bias=False),
+            nn.Sigmoid()
+        )
+
+        #Prepare output
+        C_mid = (C + num_classes)//2
+        self.prep_out = nn.Sequential(
+            nn.Conv2d(C, C_mid, kernel_size=1, bias=False),
+            InPlaceABNSync(C_mid),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(C_mid, num_classes, kernel_size=1, bias=True)
         )
 
     def forward(self, x):
 
-        return self.check_conv(x)
+        #Channel attention
+        ca = self.ca(x)                     #Shape: (B, C, 1, 1)
+        x_ca = x * ca                       #Shape: (B, C, H, W)
+
+        #Grouped Spatial Atention
+        gates = self.sa(x_ca)               #Shape: (B, G, H, W)
+
+        #Align gates with input shape to get weighted input
+        B, C, H, W = x_ca.shape
+        G = gates.shape[1]
+        C_per_G = C // G
+
+        x_g = x_ca.view(B, G, C_per_G, H, W)                                    #Shape: (B, C, H, W) -> (B, G, C_per_G, H, W)
+        gates_g = gates.view(B, G, 1, H, W).expand(-1, -1, C_per_G, -1, -1)     #Shape: (B, G, H, W) -> (B, G, 1, H, W) -> (B, G, C_per_G, H, W)
+        x_sa = (x_g * gates_g).reshape(B, C, H, W)                              #Shape: (B, G, C_per_G, H, W) -> (B, C, H, W)
+
+        #Prepare the output
+        out = self.prep_out(x_sa)           #Shape: (B, num_classes, H, W)
+        return out
+
+
 
 class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes):
@@ -271,7 +325,8 @@ class ResNet(nn.Module):
 
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(block, 64, layers[0])
+
+        self.layer1 = self._make_layer(block, 64, layers[0])                
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=2, multi_grid=(1, 1, 1))
@@ -287,9 +342,6 @@ class ResNet(nn.Module):
             nn.Dropout2d(0.1),
             nn.Conv2d(256, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
         )
-
-        #TODO CHANGED: Added
-        #self.check = Check_Module()
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
         downsample = None
@@ -311,33 +363,32 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.relu1(self.bn1(self.conv1(x)))
-        x = self.relu2(self.bn2(self.conv2(x)))
-        x = self.relu3(self.bn3(self.conv3(x)))
-        x = self.maxpool(x)
-        x2 = self.layer1(x)
-        x3 = self.layer2(x2)
-        x4 = self.layer3(x3)
-        x5 = self.layer4(x4)
-        x = self.context_encoding(x5)
-        parsing_result, parsing_fea = self.decoder(x, x2)
+        x = self.relu1(self.bn1(self.conv1(x)))             #Shape: (8, 3, 473, 473) -> (8, 64, 237, 237)
+        x = self.relu2(self.bn2(self.conv2(x)))             #Shape: (8, 64, 237, 237)
+        x = self.relu3(self.bn3(self.conv3(x)))             #Shape: (8, 128, 237, 237)
+        x = self.maxpool(x)                                 #Shape: (8, 128, 119, 119)
+        x2 = self.layer1(x)                                 #Shape: (8, 256, 119, 119)
+        x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
+        x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
+        x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+        x = self.context_encoding(x5)                       #Shape: (8, 512, 30, 30)
+        parsing_result, parsing_fea = self.decoder(x, x2)   #Shapes: (8, 20, 119, 119), (8, 256, 119, 119)
+        
         # Edge Branch
-        edge_result, edge_fea = self.edge(x2, x3, x4)
+        edge_result, edge_fea = self.edge(x2, x3, x4)       #Shapes: (8, 2, 119, 119), (8, 768, 119, 119)
+        
         # Fusion Branch
-        x = torch.cat([parsing_fea, edge_fea], dim=1)
+        x = torch.cat([parsing_fea, edge_fea], dim=1)       #Shape: (8, 1024, 119, 119). Here, 1024 is (3+1)*256.
 
-        #x = self.check(x)   #TODO CHANGED; Added
-
-        fusion_result = self.fushion(x)
+        fusion_result = self.fushion(x)                     #Shape: (8, 20, 119, 119)
 
         
         return [[parsing_result, fusion_result], [edge_result]]
 
-
-class ResNet_mod(nn.Module):
+class ResNet_Fusion_Conv_Attention(nn.Module):
     def __init__(self, block, layers, num_classes):
         self.inplanes = 128
-        super(ResNet_mod, self).__init__()
+        super(ResNet_Fusion_Conv_Attention, self).__init__()
         self.conv1 = conv3x3(3, 64, stride=2)
         self.bn1 = BatchNorm2d(64)
         self.relu1 = nn.ReLU(inplace=False)
@@ -350,7 +401,8 @@ class ResNet_mod(nn.Module):
 
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(block, 64, layers[0])
+
+        self.layer1 = self._make_layer(block, 64, layers[0])                
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=2, multi_grid=(1, 1, 1))
@@ -360,15 +412,7 @@ class ResNet_mod(nn.Module):
         self.edge = Edge_Module()
         self.decoder = Decoder_Module(num_classes)
 
-        self.fushion = nn.Sequential(
-            nn.Conv2d(1024, 256, kernel_size=1, padding=0, dilation=1, bias=False),
-            InPlaceABNSync(256),
-            nn.Dropout2d(0.1),
-            nn.Conv2d(256, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
-        )
-
-        #TODO CHANGED: Added
-        self.check = Check_Module()
+        self.fusion = Fusion_Conv_Attention(num_classes)
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
         downsample = None
@@ -390,24 +434,24 @@ class ResNet_mod(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.relu1(self.bn1(self.conv1(x)))
-        x = self.relu2(self.bn2(self.conv2(x)))
-        x = self.relu3(self.bn3(self.conv3(x)))
-        x = self.maxpool(x)
-        x2 = self.layer1(x)
-        x3 = self.layer2(x2)
-        x4 = self.layer3(x3)
-        x5 = self.layer4(x4)
-        x = self.context_encoding(x5)
-        parsing_result, parsing_fea = self.decoder(x, x2)
+        x = self.relu1(self.bn1(self.conv1(x)))             #Shape: (8, 3, 473, 473) -> (8, 64, 237, 237)
+        x = self.relu2(self.bn2(self.conv2(x)))             #Shape: (8, 64, 237, 237)
+        x = self.relu3(self.bn3(self.conv3(x)))             #Shape: (8, 128, 237, 237)
+        x = self.maxpool(x)                                 #Shape: (8, 128, 119, 119)
+        x2 = self.layer1(x)                                 #Shape: (8, 256, 119, 119)
+        x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
+        x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
+        x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+        x = self.context_encoding(x5)                       #Shape: (8, 512, 30, 30)
+        parsing_result, parsing_fea = self.decoder(x, x2)   #Shapes: (8, 20, 119, 119), (8, 256, 119, 119)
+        
         # Edge Branch
-        edge_result, edge_fea = self.edge(x2, x3, x4)
+        edge_result, edge_fea = self.edge(x2, x3, x4)       #Shapes: (8, 2, 119, 119), (8, 768, 119, 119)
+        
         # Fusion Branch
-        x = torch.cat([parsing_fea, edge_fea], dim=1)
+        x = torch.cat([parsing_fea, edge_fea], dim=1)       #Shape: (8, 1024, 119, 119). Here, 1024 is (3+1)*256.
 
-        x = self.check(x)   #TODO CHANGED; Added
-
-        fusion_result = self.fushion(x)
+        fusion_result = self.fusion(x)                     #Shape: (8, 20, 119, 119)
 
         
         return [[parsing_result, fusion_result], [edge_result]]
@@ -438,8 +482,8 @@ def resnet101(num_classes=20, pretrained='./models/resnet101-imagenet.pth'):
     initialize_pretrained_model(model, settings, pretrained)
     return model
 
-def resnet101_mod(num_classes=20, pretrained='./models/resnet101-imagenet.pth'):
-    model = ResNet_mod(Bottleneck, [3, 4, 23, 3], num_classes)
+def resnet101_fusion_conv(num_classes=20, pretrained='./models/resnet101-imagenet.pth'):
+    model = ResNet_Fusion_Conv_Attention(Bottleneck, [3, 4, 23, 3], num_classes)
     settings = pretrained_settings['resnet101']['imagenet']
     initialize_pretrained_model(model, settings, pretrained)
     return model

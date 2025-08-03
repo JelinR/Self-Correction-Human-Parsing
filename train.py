@@ -63,15 +63,15 @@ def get_arguments():
     parser.add_argument("--eval-epochs", type=int, default=10)
     parser.add_argument("--imagenet-pretrain", type=str, default='./pretrain_model/resnet101-imagenet.pth')
     parser.add_argument("--log-dir", type=str, default='./log')
-    parser.add_argument("--model-restore", type=str, default='./log/checkpoint.pth.tar')
+    parser.add_argument("--model-restore", type=str, default='./log/checkpoint_trial.pth.tar')
     parser.add_argument("--schp-start", type=int, default=100, help='schp start epoch')
     parser.add_argument("--cycle-epochs", type=int, default=10, help='schp cyclical epoch')
-    parser.add_argument("--schp-restore", type=str, default='./log/schp_checkpoint.pth.tar')
+    parser.add_argument("--schp-restore", type=str, default='./log/schp_checkpoint_trial.pth.tar')
     parser.add_argument("--lambda-s", type=float, default=1, help='segmentation loss weight')
     parser.add_argument("--lambda-e", type=float, default=1, help='edge loss weight')
     parser.add_argument("--lambda-c", type=float, default=0.1, help='segmentation-edge consistency loss weight')
 
-    parser.add_argument("--freeze_modules", action="store_true")
+    parser.add_argument("--only_train_module", type=str, default=None)
     return parser.parse_args()
 
 
@@ -100,11 +100,12 @@ def main():
     AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
     
     ##TODO CHANGED: Added
-    if args.freeze_modules:
+    if args.only_train_module is not None:
         for param in AugmentCE2P.parameters():
             param.requires_grad = False
 
-        for param in AugmentCE2P.check.parameters():
+        train_module = getattr(AugmentCE2P, args.only_train_module)
+        for param in train_module.parameters():
             param.requires_grad = True
         
         print(f"Parameter Freezing done")
@@ -203,6 +204,8 @@ def main():
         # lr_scheduler.step(epoch=epoch)    #TODO CHANGED: Warning saying that this should be after optimizer.step()
         # lr = lr_scheduler.get_lr()[0]
 
+        print(f"Epoch: {epoch}")
+
         track_loss = []
         track_loss_seg = []
         track_loss_edge = []
@@ -235,11 +238,14 @@ def main():
                     soft_preds = schp_model(images)
                     soft_parsing = []
                     soft_edge = []
-                    for soft_pred in soft_preds:
-                        soft_parsing.append(soft_pred[0][-1])
-                        soft_edge.append(soft_pred[1][-1])
-                    soft_preds = torch.cat(soft_parsing, dim=0)
-                    soft_edges = torch.cat(soft_edge, dim=0)
+                    # for soft_pred in soft_preds:
+                    #     soft_parsing.append(soft_pred[0][-1])
+                    #     soft_edge.append(soft_pred[1][-1])
+                    # soft_preds = torch.cat(soft_parsing, dim=0)
+                    # soft_edges = torch.cat(soft_edge, dim=0)
+
+                    soft_edges = soft_preds[1][0]
+                    soft_preds = soft_preds[0][1]
             else:
                 soft_preds = None
                 soft_edges = None

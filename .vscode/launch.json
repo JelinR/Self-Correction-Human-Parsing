@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug: SCHP Stand",
+            "type": "debugpy",
+            "request": "launch",
+            // "program": "${file}",
+            "module": "train",
+            // "console": "integratedTerminal",
+            "python": "/mnt/anaconda3/envs/schp_mod/bin/python",
+
+            "args": [
+                "--arch", "resnet101",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--schp-start", "1",
+                "--num_samples", "25"
+            ]
+        }
+    ]
+}

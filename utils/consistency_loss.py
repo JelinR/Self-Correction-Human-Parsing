@@ -30,4 +30,5 @@ class ConsistencyLoss(nn.Module):
         v_edge_pre = edge_pre[label!=255]
         v_edge_pre = v_edge_pre.type(torch.cuda.FloatTensor)
         positive_union = (v_generate_edge==1)&(v_edge_pre==1) # only the positive values count
+        # positive_union = (v_generate_edge==1) | (v_edge_pre==1) # only the positive values count
         return F.smooth_l1_loss(v_generate_edge[positive_union].squeeze(0), v_edge_pre[positive_union].squeeze(0))
