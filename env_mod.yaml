@@ -1,4 +1,4 @@
-name: schp_mod
+name: schp_lite
 channels:
   - conda-forge    # for gcc_linux-64 / gxx_linux-64
   - pytorch        # for PyTorch builds

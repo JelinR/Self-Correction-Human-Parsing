@@ -46,7 +46,6 @@ def get_arguments():
     parser.add_argument("--arch", type=str, default='resnet101')
     # Data Preference
     parser.add_argument("--data-dir", type=str, default='./data/LIP')
-    parser.add_argument("--num_samples", type=int, default=-1)              #TODO CHANGED: Added
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--input-size", type=str, default='473,473')
     parser.add_argument("--num-classes", type=int, default=20)
@@ -71,7 +70,10 @@ def get_arguments():
     parser.add_argument("--lambda-e", type=float, default=1, help='edge loss weight')
     parser.add_argument("--lambda-c", type=float, default=0.1, help='segmentation-edge consistency loss weight')
 
+    parser.add_argument("--num_samples", type=int, default=-1)              #TODO CHANGED: Added
     parser.add_argument("--only_train_module", type=str, default=None)
+    parser.add_argument("--optimizer", type=str, default="sgd", help="Options: ['sgd', 'adamw']")
+    parser.add_argument("--cons_loss_type", type=str, default="hard", help="Options: ['hard', 'soft']")
     return parser.parse_args()
 
 
@@ -103,12 +105,19 @@ def main():
     if args.only_train_module is not None:
         for param in AugmentCE2P.parameters():
             param.requires_grad = False
+        print(f"\nFroze all model parameters")
 
-        train_module = getattr(AugmentCE2P, args.only_train_module)
-        for param in train_module.parameters():
-            param.requires_grad = True
+        module_names = args.only_train_module.split(",")                        #Extract mentioned modules to train
+        for mod_name in module_names:                                           #Iterate and enable training for each module
+            print(f"Making {mod_name} Trainable...")
+            attrs = [a for a in dir(AugmentCE2P) if a.__contains__(mod_name)]   #Extract all attributes containing module's name (in case of multiple blocks)
+            print(f"Attrs found for {mod_name}: {attrs}")
+            for attr in attrs:                                                  #Make each instance of the module trainable
+                train_module = getattr(AugmentCE2P, attr)                       
+                for param in train_module.parameters():
+                    param.requires_grad = True
         
-        print(f"Parameter Freezing done")
+        print(f"Parameter Freezing done\n")
     ##
     
     model = DataParallelModel(AugmentCE2P)
@@ -138,9 +147,9 @@ def main():
     # trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    print(f"Total params:     {total_params:,}")
+    print(f"\nTotal params:     {total_params:,}")
     print(f"Trainable params: {trainable_params:,}")
-    print(f"Frozen params:    {total_params - trainable_params:,}")
+    print(f"Frozen params:    {total_params - trainable_params:,}\n")
 
     SCHP_AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
     schp_model = DataParallelModel(SCHP_AugmentCE2P)    #TODO Doubt
@@ -155,6 +164,7 @@ def main():
 
     # Loss Function
     criterion = CriterionAll(lambda_1=args.lambda_s, lambda_2=args.lambda_e, lambda_3=args.lambda_c,
+                             cons_loss_type=args.cons_loss_type,
                              num_classes=args.num_classes)
     criterion = DataParallelCriterion(criterion)
     criterion.cuda()
@@ -184,9 +194,14 @@ def main():
 
     # Optimizer Initialization
     trainable = [p for p in model.parameters() if p.requires_grad]
-    optimizer = optim.SGD(trainable, lr=args.learning_rate, momentum=args.momentum,
-                          weight_decay=args.weight_decay)
 
+    if args.optimizer == "sgd":
+        optimizer = optim.SGD(trainable, lr=args.learning_rate, momentum=args.momentum,
+                            weight_decay=args.weight_decay)
+    elif args.optimizer == "adamw":
+        optimizer = optim.AdamW(trainable, lr=args.learning_rate, weight_decay=args.weight_decay)
+    else:
+        raise ValueError
     #TODO CHANGED: Commented
     # optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum,
     #                       weight_decay=args.weight_decay)

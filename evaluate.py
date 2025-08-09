@@ -202,6 +202,10 @@ def main():
     assert len(parsing_preds) == num_samples
     mIoU = compute_mean_ioU(parsing_preds, scales, centers, args.num_classes, args.data_dir, input_size)
     print(mIoU)
+
+    save_path = f"{args.log_dir}/results.pt"
+    torch.save(mIoU, save_path)
+
     return
 
 

@@ -17,13 +17,14 @@ import numpy as np
 from torch.nn import functional as F
 from .lovasz_softmax import LovaszSoftmax
 from .kl_loss import KLDivergenceLoss
-from .consistency_loss import ConsistencyLoss
+from .consistency_loss import ConsistencyLoss, ConsistencyLoss_Soft
 
 NUM_CLASSES = 20
 
 
 class CriterionAll(nn.Module):
     def __init__(self, use_class_weight=False, ignore_index=255, lambda_1=1, lambda_2=1, lambda_3=1,
+                 cons_loss_type="hard",
                  num_classes=20):
         super(CriterionAll, self).__init__()
         self.ignore_index = ignore_index
@@ -31,7 +32,7 @@ class CriterionAll(nn.Module):
         self.criterion = torch.nn.CrossEntropyLoss(ignore_index=ignore_index)
         self.lovasz = LovaszSoftmax(ignore_index=ignore_index)
         self.kldiv = KLDivergenceLoss(ignore_index=ignore_index)
-        self.reg = ConsistencyLoss(ignore_index=ignore_index)
+        self.reg = ConsistencyLoss(ignore_index=ignore_index) if cons_loss_type == "hard" else ConsistencyLoss_Soft(ignore_index=ignore_index)
         self.lamda_1 = lambda_1
         self.lamda_2 = lambda_2
         self.lamda_3 = lambda_3

@@ -8,9 +8,7 @@
             "name": "Debug: SCHP Stand",
             "type": "debugpy",
             "request": "launch",
-            // "program": "${file}",
             "module": "train",
-            // "console": "integratedTerminal",
             "python": "/mnt/anaconda3/envs/schp_mod/bin/python",
 
             "args": [
@@ -19,6 +17,23 @@
                 "--gpu", "0",
                 "--schp-start", "1",
                 "--num_samples", "25"
+            ]
+        },
+
+        {
+            "name": "Debug: HRNet + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "hrnet_schp",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk"
             ]
         }
     ]
