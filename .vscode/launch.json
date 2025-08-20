@@ -21,6 +21,23 @@
         },
 
         {
+            "name": "Debug: Lite_HRNet + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "lite_hrnet_schp",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk"
+            ]
+        },
+
+        {
             "name": "Debug: HRNet + SCHP",
             "type": "debugpy",
             "request": "launch",
@@ -28,12 +45,49 @@
             "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
 
             "args": [
-                "--arch", "hrnet_schp",
+                "--arch", "hrnet_schp_48",
                 "--batch-size", "8",
                 "--gpu", "0",
                 "--num_samples", "25",
                 "--input-size", "128,128",
-                "--log-dir", "./log/junk"
+                "--log-dir", "./log/junk",
+                "--imagenet-pretrain", "None"
+            ]
+        },
+
+        {
+            "name": "Debug: HRNet_OCR + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "hrnet_48_ocr",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk",
+                "--imagenet-pretrain", "None"
+            ]
+        },
+
+        {
+            "name": "Debug: ResNeSt101 + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "ResNeSt101",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk",
+                "--imagenet-pretrain", "None"
             ]
         }
     ]

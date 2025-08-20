@@ -99,6 +99,7 @@ def main():
     cudnn.benchmark = True
 
     # Model Initialization
+    args.imagenet_pretrain = None if args.imagenet_pretrain == "None" else args.imagenet_pretrain
     AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
     
     ##TODO CHANGED: Added

@@ -4,7 +4,11 @@ from networks.AugmentCE2P import resnet101, resnet101_fusion_conv, resnet101_fus
     resnet101_multiscale, resnet101_mod, resnet101_fusion_conv_blocks, resnet101_fusion_conv_alt, \
     resnet101_fusion_conv_alt_blocks, resnet101_multiscale_btw3
 
-from networks.HRNet_SCHP import hrnet_schp_custom, hrnet_schp_30_small
+from networks.HRNet_SCHP import lite_hrnet_schp_custom, lite_hrnet_schp_30_small, \
+                                    hrnet_schp_48, hrnet_schp_48_top, \
+                                    hrnet_48_ocr
+
+from networks.ResNeSt_SCHP import ResNeSt101
 
 __factory = {
     'resnet101': resnet101,
@@ -17,8 +21,14 @@ __factory = {
     'resnet101_fusion_conv_alt_blocks': resnet101_fusion_conv_alt_blocks,
     'resnet101_multiscale_btw3': resnet101_multiscale_btw3,
 
-    'hrnet_schp': hrnet_schp_custom,
-    'hrnet_schp_30_small': hrnet_schp_30_small
+    'lite_hrnet_schp_custom': lite_hrnet_schp_custom,
+    'lite_hrnet_schp_30_small': lite_hrnet_schp_30_small,
+
+    'hrnet_schp_48': hrnet_schp_48,
+    'hrnet_schp_48_top': hrnet_schp_48_top,
+    'hrnet_48_ocr': hrnet_48_ocr,
+
+    'ResNeSt101': ResNeSt101
 }
 
 

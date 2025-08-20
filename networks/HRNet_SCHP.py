@@ -21,6 +21,10 @@ from torch.nn import functional as F
 from modules import InPlaceABNSync
 
 from networks.backbone.Lite_HRNET import LiteHRNet
+from networks.backbone.HRNet import *
+
+from networks.backbone.hrnet_utils.hrnet_ocr_config import _C as cfg
+from networks.backbone.HRNet_OCR import HighResolutionNet
 
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='none')
 
@@ -125,12 +129,10 @@ model_cfg = {
     "custom": model_custom_cfg
 }
 
-
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
-
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -353,10 +355,10 @@ class HRNet_Lite_Custom(nn.Module):
 
         self.backbone = LiteHRNet(extra = model_cfg[model_type])
 
-        self.up_sample_1 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
-        self.up_sample_2 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
-        self.up_sample_3 = nn.Upsample(size=(60, 60), mode='bilinear', align_corners=False)
-        self.up_sample_4 = nn.Upsample(size=(30, 30), mode='bilinear', align_corners=False)
+        # self.up_sample_1 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        # self.up_sample_2 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        # self.up_sample_3 = nn.Upsample(size=(60, 60), mode='bilinear', align_corners=False)
+        # self.up_sample_4 = nn.Upsample(size=(30, 30), mode='bilinear', align_corners=False)
 
         self.context_encoding = PSPModule(1024, 512)
 
@@ -405,10 +407,15 @@ class HRNet_Lite_Custom(nn.Module):
                                                                 #        (8, 1024, 4, 4)         
         x, x2, x3, x4 = x_back[0], x_back[1], x_back[2], x_back[3]
 
-        x = self.up_sample_1(x)                                 #Shape: (8, 128, 32, 32) -> (8, 128, 119, 119)
-        x2 = self.up_sample_2(x2)                               #Shape: (8, 256, 16, 16) -> (8, 256, 119, 119)
-        x3 = self.up_sample_3(x3)                               #Shape: (8, 512, 8, 8) -> (8, 512, 60, 60)
-        x4 = self.up_sample_4(x4)                               #Shape: (8, 1024, 4, 4) -> (8, 1024, 30, 30)
+        # x = self.up_sample_1(x)                                 #Shape: (8, 128, 32, 32) -> (8, 128, 119, 119)
+        # x2 = self.up_sample_2(x2)                               #Shape: (8, 256, 16, 16) -> (8, 256, 119, 119)
+        # x3 = self.up_sample_3(x3)                               #Shape: (8, 512, 8, 8) -> (8, 512, 60, 60)
+        # x4 = self.up_sample_4(x4)                               #Shape: (8, 1024, 4, 4) -> (8, 1024, 30, 30)
+
+        x = F.interpolate(x, (119, 119), mode="bilinear", align_corners=False)                                 #Shape: (8, 128, 32, 32) -> (8, 128, 119, 119)
+        x2 = F.interpolate(x2, (119, 119), mode="bilinear", align_corners=False)                                  #Shape: (8, 256, 16, 16) -> (8, 256, 119, 119)
+        x3 = F.interpolate(x3, (60, 60), mode="bilinear", align_corners=False)                                  #Shape: (8, 512, 8, 8) -> (8, 512, 60, 60)
+        x4 = F.interpolate(x4, (30, 30), mode="bilinear", align_corners=False)                                  #Shape: (8, 1024, 4, 4) -> (8, 1024, 30, 30)
 
         # x = self.context_encoding(x5)                       #Shape: (8, 512, 30, 30)
         x = self.context_encoding(x4)                           #Shape: (8, 512, 30, 30)
@@ -460,7 +467,7 @@ class Decoder_Module_30_small(nn.Module):
         seg = self.conv4(x)
         return seg, x
 
-class HRNet_30_small(nn.Module):
+class HRNet_Lite_30_small(nn.Module):
     def __init__(self, num_classes, model_type="30_small"):
         self.inplanes = 128
         super(HRNet_30_small, self).__init__()
@@ -556,6 +563,420 @@ class HRNet_30_small(nn.Module):
         return [[parsing_result, fusion_result], [edge_result]]
 
 
+# HRNet as Backbone (hrnet32)
+class Decoder_Module_HRNet_48(nn.Module):
+    """
+    Parsing Branch Decoder Module.
+    """
+
+    def __init__(self, num_classes):
+        super(Decoder_Module_HRNet_48, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(192, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(96, 48, kernel_size=1, stride=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(48)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(144, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96),
+            nn.Conv2d(96, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96)
+        )
+
+        self.conv4 = nn.Conv2d(96, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
+
+    def forward(self, xt, xl):
+        _, _, h, w = xl.size()
+        xt = F.interpolate(self.conv1(xt), size=(h, w), mode='bilinear', align_corners=True)
+        xl = self.conv2(xl)
+        x = torch.cat([xt, xl], dim=1)
+        x = self.conv3(x)
+        seg = self.conv4(x)
+        return seg, x
+
+class HRNet_48_SCHP(nn.Module):
+    def __init__(self, num_classes, hrnet_size=48, pretrained=False):
+        self.inplanes = 128
+        super(HRNet_48_SCHP, self).__init__()
+        # self.conv1 = conv3x3(3, 64, stride=2)
+        # self.bn1 = BatchNorm2d(64)
+        # self.relu1 = nn.ReLU(inplace=False)
+        # self.conv2 = conv3x3(64, 64)
+        # self.bn2 = BatchNorm2d(64)
+        # self.relu2 = nn.ReLU(inplace=False)
+        # self.conv3 = conv3x3(64, 128)
+        # self.bn3 = BatchNorm2d(128)
+        # self.relu3 = nn.ReLU(inplace=False)
+
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+
+        # self.layer1 = self._make_layer(block, 64, layers[0])                
+        # self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        # self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        # self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=2, multi_grid=(1, 1, 1))
+
+        self.backbone = hrnet48(pretrained=pretrained)
+
+        self.up_sample_1 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_2 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_3 = nn.Upsample(size=(60, 60), mode='bilinear', align_corners=False)
+        self.up_sample_4 = nn.Upsample(size=(30, 30), mode='bilinear', align_corners=False)
+
+        self.fuse_hrnet_results = nn.Sequential(
+            nn.Conv2d(
+                in_channels=720,
+                out_channels=720,
+                kernel_size=1,
+                stride=1,
+                padding=0),
+            InPlaceABNSync(720),
+            nn.Conv2d(
+                in_channels=720,
+                out_channels=720,
+                kernel_size=1,
+                stride=1,
+                padding=0)
+        )
+
+        self.context_encoding = PSPModule(420, 192)
+
+        self.edge = Edge_Module(in_fea = [96, 192, 384], mid_fea = 96, out_fea = 2)
+        self.decoder = Decoder_Module_HRNet_48(num_classes)
+
+        self.fushion = nn.Sequential(
+            nn.Conv2d(384, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(96, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
+        )
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                BatchNorm2d(planes * block.expansion, affine=affine_par))
+
+        layers = []
+        generate_multi_grid = lambda index, grids: grids[index % len(grids)] if isinstance(grids, tuple) else 1
+        layers.append(block(self.inplanes, planes, stride, dilation=dilation, downsample=downsample,
+                            multi_grid=generate_multi_grid(0, multi_grid)))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(
+                block(self.inplanes, planes, dilation=dilation, multi_grid=generate_multi_grid(i, multi_grid)))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # x = self.relu1(self.bn1(self.conv1(x)))             #Shape: (8, 3, 473, 473) -> (8, 64, 237, 237)
+        # x = self.relu2(self.bn2(self.conv2(x)))             #Shape: (8, 64, 237, 237)
+        # x = self.relu3(self.bn3(self.conv3(x)))             #Shape: (8, 128, 237, 237)
+        # x = self.maxpool(x)                                 #Shape: (8, 128, 119, 119)
+        # x2 = self.layer1(x)                                 #Shape: (8, 256, 119, 119)
+        # x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
+        # x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
+        # x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+
+        x_back = self.backbone(x)                               #Shapes: (8, 48, 32, 32),
+                                                                #        (8, 96, 16, 16),
+                                                                #        (8, 192, 8, 8),
+                                                                #        (8, 384, 4, 4)         
+        x, x2, x3, x4 = x_back[0], x_back[1], x_back[2], x_back[3]
+
+        x = self.up_sample_1(x)                                 #Shape: (8, 48, 32, 32) -> (8, 48, 119, 119)
+        x2 = self.up_sample_2(x2)                               #Shape: (8, 96, 16, 16) -> (8, 96, 119, 119)
+        x3 = self.up_sample_3(x3)                               #Shape: (8, 192, 8, 8) -> (8, 192, 60, 60)
+        x4 = self.up_sample_4(x4)                               #Shape: (8, 384, 4, 4) -> (8, 384, 30, 30)
+
+        #Fusing the results and obtaining x5
+        x0_h, x0_w = x.size()[2], x.size()[3]
+        x2_fuse = F.interpolate(x2, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x3_fuse = F.interpolate(x3, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x4_fuse = F.interpolate(x4, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+
+        x5 = torch.cat([x, x2_fuse, x3_fuse, x4_fuse], 1)     #Shape: (8, 720, 119, 119)
+
+        x5 = self.fuse_hrnet_results(x5)                         #Shape: (8, 420, 119, 119)
+
+        x = self.context_encoding(x5)                           #Shape: (8, 192, 30, 30)
+        parsing_result, parsing_fea = self.decoder(x, x2)       #Shapes: (8, 20, 119, 119), (8, 96, 119, 119)
+        
+        # Edge Branch
+        edge_result, edge_fea = self.edge(x2, x3, x4)       #Shapes: (8, 2, 119, 119), (8, 288, 119, 119)
+        
+        # Fusion Branch
+        x = torch.cat([parsing_fea, edge_fea], dim=1)       #Shape: (8, 384, 119, 119). Here, 384 is (3+1)*96.
+
+        fusion_result = self.fushion(x)                     #Shape: (8, 20, 119, 119)
+
+        
+        return [[parsing_result, fusion_result], [edge_result]]
+
+class HRNet_48_Top_SCHP(nn.Module):
+    def __init__(self, num_classes, hrnet_size=48, pretrained=False):
+        self.inplanes = 128
+        super(HRNet_48_Top_SCHP, self).__init__()
+        # self.conv1 = conv3x3(3, 64, stride=2)
+        # self.bn1 = BatchNorm2d(64)
+        # self.relu1 = nn.ReLU(inplace=False)
+        # self.conv2 = conv3x3(64, 64)
+        # self.bn2 = BatchNorm2d(64)
+        # self.relu2 = nn.ReLU(inplace=False)
+        # self.conv3 = conv3x3(64, 128)
+        # self.bn3 = BatchNorm2d(128)
+        # self.relu3 = nn.ReLU(inplace=False)
+
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+
+        # self.layer1 = self._make_layer(block, 64, layers[0])                
+        # self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        # self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        # self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=2, multi_grid=(1, 1, 1))
+
+        self.backbone = hrnet48(pretrained=pretrained)
+
+        self.up_sample_1 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_2 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_3 = nn.Upsample(size=(60, 60), mode='bilinear', align_corners=False)
+        self.up_sample_4 = nn.Upsample(size=(30, 30), mode='bilinear', align_corners=False)
+
+        self.fuse_hrnet_results = nn.Sequential(
+            nn.Conv2d(
+                in_channels=720,
+                out_channels=720,
+                kernel_size=1,
+                stride=1,
+                padding=0),
+            InPlaceABNSync(720),
+            nn.Conv2d(
+                in_channels=720,
+                out_channels=20,
+                kernel_size=1,
+                stride=1,
+                padding=0)
+        )
+
+        self.get_parse_feats = nn.Sequential(
+            nn.Conv2d(720, 408, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(408),
+            nn.Conv2d(408, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96)
+        )
+
+
+
+        # self.context_encoding = PSPModule(420, 192)
+
+        self.edge = Edge_Module(in_fea = [96, 192, 384], mid_fea = 96, out_fea = 2)
+        # self.decoder = Decoder_Module_HRNet_48(num_classes)
+
+        self.fushion = nn.Sequential(
+            nn.Conv2d(384, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(96, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
+        )
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                BatchNorm2d(planes * block.expansion, affine=affine_par))
+
+        layers = []
+        generate_multi_grid = lambda index, grids: grids[index % len(grids)] if isinstance(grids, tuple) else 1
+        layers.append(block(self.inplanes, planes, stride, dilation=dilation, downsample=downsample,
+                            multi_grid=generate_multi_grid(0, multi_grid)))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(
+                block(self.inplanes, planes, dilation=dilation, multi_grid=generate_multi_grid(i, multi_grid)))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # x = self.relu1(self.bn1(self.conv1(x)))             #Shape: (8, 3, 473, 473) -> (8, 64, 237, 237)
+        # x = self.relu2(self.bn2(self.conv2(x)))             #Shape: (8, 64, 237, 237)
+        # x = self.relu3(self.bn3(self.conv3(x)))             #Shape: (8, 128, 237, 237)
+        # x = self.maxpool(x)                                 #Shape: (8, 128, 119, 119)
+        # x2 = self.layer1(x)                                 #Shape: (8, 256, 119, 119)
+        # x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
+        # x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
+        # x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+
+        x_back = self.backbone(x)                               #Shapes: (8, 48, 32, 32),
+                                                                #        (8, 96, 16, 16),
+                                                                #        (8, 192, 8, 8),
+                                                                #        (8, 384, 4, 4)         
+        x, x2, x3, x4 = x_back[0], x_back[1], x_back[2], x_back[3]
+
+        x = self.up_sample_1(x)                                 #Shape: (8, 48, 32, 32) -> (8, 48, 119, 119)
+        x2 = self.up_sample_2(x2)                               #Shape: (8, 96, 16, 16) -> (8, 96, 119, 119)
+        x3 = self.up_sample_3(x3)                               #Shape: (8, 192, 8, 8) -> (8, 192, 60, 60)
+        x4 = self.up_sample_4(x4)                               #Shape: (8, 384, 4, 4) -> (8, 384, 30, 30)
+
+        #Fusing the results and obtaining x5
+        x0_h, x0_w = x.size()[2], x.size()[3]
+        x2_fuse = F.interpolate(x2, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x3_fuse = F.interpolate(x3, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        x4_fuse = F.interpolate(x4, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+
+        x5 = torch.cat([x, x2_fuse, x3_fuse, x4_fuse], 1)       #Shape: (8, 720, 119, 119)
+
+        parsing_result = self.fuse_hrnet_results(x5)            #Shape: (8, 20, 119, 119)
+        parsing_fea = self.get_parse_feats(x5)                  #Shape: (8, 96, 119, 119)
+
+        # x = self.context_encoding(x5)                           #Shape: (8, 192, 30, 30)
+        # parsing_result, parsing_fea = self.decoder(x, x2)       #Shapes: (8, 20, 119, 119), (8, 96, 119, 119)
+        
+        # Edge Branch
+        edge_result, edge_fea = self.edge(x2, x3, x4)       #Shapes: (8, 2, 119, 119), (8, 288, 119, 119)
+        
+        # Fusion Branch
+        x = torch.cat([parsing_fea, edge_fea], dim=1)       #Shape: (8, 384, 119, 119). Here, 384 is (3+1)*96.
+
+        fusion_result = self.fushion(x)                     #Shape: (8, 20, 119, 119)
+
+        
+        return [[parsing_result, fusion_result], [edge_result]]
+
+def load_ocr_model(conf, yaml_path = "networks/backbone/hrnet_ocr_arch_config.yaml"):
+
+    conf.defrost()
+    conf.merge_from_file(yaml_path)
+    conf.freeze()
+
+    model = HighResolutionNet(conf)
+    return model
+
+class HRNet_48_OCR(nn.Module):
+    def __init__(self, num_classes, pretrained=False):
+        self.inplanes = 128
+        super(HRNet_48_OCR, self).__init__()
+        # self.conv1 = conv3x3(3, 64, stride=2)
+        # self.bn1 = BatchNorm2d(64)
+        # self.relu1 = nn.ReLU(inplace=False)
+        # self.conv2 = conv3x3(64, 64)
+        # self.bn2 = BatchNorm2d(64)
+        # self.relu2 = nn.ReLU(inplace=False)
+        # self.conv3 = conv3x3(64, 128)
+        # self.bn3 = BatchNorm2d(128)
+        # self.relu3 = nn.ReLU(inplace=False)
+
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+
+        # self.layer1 = self._make_layer(block, 64, layers[0])                
+        # self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        # self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        # self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=2, multi_grid=(1, 1, 1))
+
+        self.backbone = load_ocr_model(cfg)
+
+        self.up_sample_1 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_2 = nn.Upsample(size=(119, 119), mode='bilinear', align_corners=False)
+        self.up_sample_3 = nn.Upsample(size=(60, 60), mode='bilinear', align_corners=False)
+        self.up_sample_4 = nn.Upsample(size=(30, 30), mode='bilinear', align_corners=False)
+
+        # self.context_encoding = PSPModule(420, 192)
+
+        self.process_parse_feats = nn.Sequential(
+            nn.Conv2d(20, 58, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(58),
+            nn.Conv2d(58, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96)
+        )
+
+        self.edge = Edge_Module(in_fea = [96, 192, 384], mid_fea = 96, out_fea = 2)
+        # self.decoder = Decoder_Module_HRNet_48(num_classes)
+
+        self.fushion = nn.Sequential(
+            nn.Conv2d(384, 96, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(96),
+            nn.Dropout2d(0.1),
+            nn.Conv2d(96, num_classes, kernel_size=1, padding=0, dilation=1, bias=True)
+        )
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, multi_grid=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                BatchNorm2d(planes * block.expansion, affine=affine_par))
+
+        layers = []
+        generate_multi_grid = lambda index, grids: grids[index % len(grids)] if isinstance(grids, tuple) else 1
+        layers.append(block(self.inplanes, planes, stride, dilation=dilation, downsample=downsample,
+                            multi_grid=generate_multi_grid(0, multi_grid)))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(
+                block(self.inplanes, planes, dilation=dilation, multi_grid=generate_multi_grid(i, multi_grid)))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # x = self.relu1(self.bn1(self.conv1(x)))             #Shape: (8, 3, 473, 473) -> (8, 64, 237, 237)
+        # x = self.relu2(self.bn2(self.conv2(x)))             #Shape: (8, 64, 237, 237)
+        # x = self.relu3(self.bn3(self.conv3(x)))             #Shape: (8, 128, 237, 237)
+        # x = self.maxpool(x)                                 #Shape: (8, 128, 119, 119)
+        # x2 = self.layer1(x)                                 #Shape: (8, 256, 119, 119)
+        # x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
+        # x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
+        # x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+
+        x_back = self.backbone(x)                               #Shapes: (8, 20, 32, 32),  out_aux
+                                                                #        (8, 20, 32, 32),  out
+                                                                #        (8, 96, 16, 16),  x[1]
+                                                                #        (8, 192, 8, 8),   x[2]
+                                                                #        (8, 384, 4, 4)    x[3]
+                                                                        
+        parsing_fea, parsing_result, x2, x3, x4 = x_back[0], x_back[1], x_back[2], x_back[3], x_back[4]
+
+        parsing_result = F.interpolate(parsing_result, size=(119, 119), mode='bilinear', align_corners=False)   #Shape: (8, 20, 119, 119)
+        parsing_fea = F.interpolate(parsing_fea, size=(119, 119), mode='bilinear', align_corners=False)         #Shape: (8, 20, 119, 119)
+        parsing_fea = self.process_parse_feats(parsing_fea)                                                     #Shape: (8, 96, 119, 119)
+
+        # x = self.up_sample_1(x)                                 #Shape: (8, 48, 32, 32) -> (8, 48, 119, 119)
+        x2 = self.up_sample_2(x2)                               #Shape: (8, 96, 16, 16) -> (8, 96, 119, 119)
+        x3 = self.up_sample_3(x3)                               #Shape: (8, 192, 8, 8) -> (8, 192, 60, 60)
+        x4 = self.up_sample_4(x4)                               #Shape: (8, 384, 4, 4) -> (8, 384, 30, 30)
+
+        #Fusing the results and obtaining x5
+        # x0_h, x0_w = x.size()[2], x.size()[3]
+        # x2_fuse = F.interpolate(x2, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        # x3_fuse = F.interpolate(x3, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+        # x4_fuse = F.interpolate(x4, size=(x0_h, x0_w), mode='bilinear', align_corners=False)
+
+        # x5 = torch.cat([x, x2_fuse, x3_fuse, x4_fuse], 1)       #Shape: (8, 720, 119, 119)
+
+        # parsing_result = self.fuse_hrnet_results(x5)            #Shape: (8, 20, 119, 119)
+        # parsing_fea = self.get_parse_feats(x5)                  #Shape: (8, 96, 119, 119)
+
+        # x = self.context_encoding(x5)                           #Shape: (8, 192, 30, 30)
+        # parsing_result, parsing_fea = self.decoder(x, x2)       #Shapes: (8, 20, 119, 119), (8, 96, 119, 119)
+        
+        # Edge Branch
+        edge_result, edge_fea = self.edge(x2, x3, x4)       #Shapes: (8, 2, 119, 119), (8, 288, 119, 119)
+        
+        # Fusion Branch
+        x = torch.cat([parsing_fea, edge_fea], dim=1)       #Shape: (8, 384, 119, 119). Here, 384 is (3+1)*96.
+
+        fusion_result = self.fushion(x)                     #Shape: (8, 20, 119, 119)
+
+        
+        return [[parsing_result, fusion_result], [edge_result]]
+
 
 def initialize_pretrained_model_hrnet(model, settings, pretrained="./checkpoints/litehrnet_30_coco_256x192.pth"):
     model.input_space = settings['input_space']
@@ -581,14 +1002,33 @@ def initialize_pretrained_model_hrnet(model, settings, pretrained="./checkpoints
 
 
 
-def hrnet_schp_custom(num_classes=20, pretrained=None):
-    model = HRNet_Lite(num_classes, model_type="custom")
+def lite_hrnet_schp_custom(num_classes=20, pretrained=None):
+    model = HRNet_Lite_Custom(num_classes, model_type="custom")
     settings = pretrained_settings['resnet101']['imagenet']
     initialize_pretrained_model_hrnet(model, settings, pretrained)
     return model
 
-def hrnet_schp_30_small(num_classes=20, pretrained="./checkpoints/litehrnet_30_coco_256x192.pth"):
+def lite_hrnet_schp_30_small(num_classes=20, pretrained="./checkpoints/litehrnet_30_coco_256x192.pth"):
     model = HRNet_30_small(num_classes, model_type="30_small")
+    settings = pretrained_settings['resnet101']['imagenet']
+    initialize_pretrained_model_hrnet(model, settings, pretrained)
+    return model
+
+
+def hrnet_schp_48_top(num_classes=20, pretrained=None):
+    model = HRNet_48_Top_SCHP(num_classes=num_classes, hrnet_size=48, pretrained=True if pretrained is not None else False)
+    settings = pretrained_settings['resnet101']['imagenet']
+    initialize_pretrained_model_hrnet(model, settings, pretrained)
+    return model
+
+def hrnet_schp_48(num_classes=20, pretrained=None):
+    model = HRNet_48_SCHP(num_classes=num_classes, hrnet_size=48, pretrained=True if pretrained is not None else False)
+    settings = pretrained_settings['resnet101']['imagenet']
+    initialize_pretrained_model_hrnet(model, settings, pretrained)
+    return model
+
+def hrnet_48_ocr(num_classes=20, pretrained=None):
+    model = HRNet_48_OCR(num_classes=num_classes)
     settings = pretrained_settings['resnet101']['imagenet']
     initialize_pretrained_model_hrnet(model, settings, pretrained)
     return model
