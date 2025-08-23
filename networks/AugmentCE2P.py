@@ -542,6 +542,8 @@ class ResNet(nn.Module):
         x3 = self.layer2(x2)                                #Shape: (8, 512, 60, 60)
         x4 = self.layer3(x3)                                #Shape: (8, 1024, 30, 30)
         x5 = self.layer4(x4)                                #Shape: (8, 2048, 30, 30)
+
+        
         x = self.context_encoding(x5)                       #Shape: (8, 512, 30, 30)
         parsing_result, parsing_fea = self.decoder(x, x2)   #Shapes: (8, 20, 119, 119), (8, 256, 119, 119)
         

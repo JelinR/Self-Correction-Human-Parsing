@@ -490,20 +490,6 @@ class ResNet(nn.Module):
 
         # return x
 
-        #TODO Added: Prepare for CE2P input
-        # Upsampling
-        # x = F.interpolate(x, size=(119, 119),
-        #                 mode='bilinear', align_corners=False)   #Shape: (8, 128, 32, 32) -> (8, 128, 119, 119)
-        # x2 = F.interpolate(x2, size=(119, 119),
-        #                 mode='bilinear', align_corners=False)   #Shape: (8, 256, 32, 32) -> (8, 256, 119, 119)
-        # x3 = F.interpolate(x3, size=(60, 60),
-        #                 mode='bilinear', align_corners=False)   #Shape: (8, 512, 16, 16) -> (8, 512, 60, 60)
-        # x4 = F.interpolate(x4, size=(30, 30),
-        #                 mode='bilinear', align_corners=False)   #Shape: (8, 1024, 8, 8) -> (8, 1024, 30, 30)
-        # x5 = F.interpolate(x5, size=(30, 30),
-        #                 mode='bilinear', align_corners=False)   #Shape: (8, 2048, 4, 4) -> (8, 1024, 30, 30)
-
-
         #TODO Added: CE2P 
         x = self.context_encoding(x5)                       #Shape: (8, 512, 16, 16)
         parsing_result, parsing_fea = self.decoder(x, x2)   #Shapes: (8, 20, 32, 32), (8, 256, 32, 32)
@@ -563,7 +549,29 @@ def initialize_pretrained_model(model, settings, pretrained='./models/resnet101-
 
 def ResNeSt101(num_classes=20, pretrained=None, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_classes,
-                   dilated=True,
+                   dilated=True,                                            #This makes OS = 8
+                   radix=2, groups=1, bottleneck_width=64,
+                   deep_stem=True, stem_width=64, avg_down=True,
+                   avd=True, avd_first=False, **kwargs)
+
+    settings = pretrained_settings['resnet101']['imagenet']
+    initialize_pretrained_model(model, settings, pretrained)
+    return model
+
+def ResNeSt101_dilate_2(num_classes=20, pretrained=None, **kwargs):
+    model = ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_classes,
+                   dilation=2,                                              #This makes OS = 16
+                   radix=2, groups=1, bottleneck_width=64,
+                   deep_stem=True, stem_width=64, avg_down=True,
+                   avd=True, avd_first=False, **kwargs)
+
+    settings = pretrained_settings['resnet101']['imagenet']
+    initialize_pretrained_model(model, settings, pretrained)
+    return model
+
+def ResNeSt101_dilate_1(num_classes=20, pretrained=None, **kwargs):
+    model = ResNet(Bottleneck, [3, 4, 23, 3], num_classes=num_classes,
+                   dilated=False,                                            #This makes OS = 32
                    radix=2, groups=1, bottleneck_width=64,
                    deep_stem=True, stem_width=64, avg_down=True,
                    avd=True, avd_first=False, **kwargs)

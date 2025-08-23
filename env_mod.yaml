@@ -1,4 +1,4 @@
-name: schp_lite
+name: schp_segform
 channels:
   - conda-forge    # for gcc_linux-64 / gxx_linux-64
   - pytorch        # for PyTorch builds

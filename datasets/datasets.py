@@ -19,10 +19,13 @@ import cv2
 from torch.utils import data
 from utils.transforms import get_affine_transform
 
+import yaml
+
 
 class LIPDataSet(data.Dataset):
     def __init__(self, root, dataset, crop_size=[473, 473], scale_factor=0.25,
-                 rotation_factor=30, ignore_label=255, transform=None, num_samples=-1):
+                 rotation_factor=30, ignore_label=255, transform=None, num_samples=-1,
+                 do_mapping=False):
         self.root = root
         self.aspect_ratio = crop_size[1] * 1.0 / crop_size[0]
         self.crop_size = np.asarray(crop_size)
@@ -43,6 +46,28 @@ class LIPDataSet(data.Dataset):
 
         self.train_list = train_list
         self.number_samples = len(self.train_list)
+
+        # TODO CHANGED: Added
+        self.do_mapping = do_mapping
+        if do_mapping:
+
+            #Load the mapping info (mapping for class IDs)
+            mapping_path = os.path.join(self.root, "mapping.yaml")
+            assert os.path.exists(mapping_path)
+
+            with open(mapping_path, "r") as f:
+                info = yaml.safe_load(f)
+
+            mapping = info["mapping"]
+            
+            #Create a lookup array for mapping IDs
+            max_old = max(mapping.keys())
+            mapping_lookup = np.arange(max_old+1)
+            for k, v in mapping.items():
+                mapping_lookup[k] = v
+            print(f"\n\nMapping Lookup Created!\n")
+            
+            self.mapping_lookup = mapping_lookup
 
     def __len__(self):
         return self.number_samples
@@ -80,6 +105,11 @@ class LIPDataSet(data.Dataset):
         if self.dataset != 'test':
             # Get pose annotation
             parsing_anno = cv2.imread(parsing_anno_path, cv2.IMREAD_GRAYSCALE)
+
+            #Map class labels if needed
+            if self.do_mapping:
+                parsing_anno = self.mapping_lookup[parsing_anno]
+
             if self.dataset == 'train' or self.dataset == 'trainval':
                 sf = self.scale_factor
                 rf = self.rotation_factor
@@ -137,6 +167,7 @@ class LIPDataSet(data.Dataset):
 
 class LIPDataValSet(data.Dataset):
     def __init__(self, root, dataset='val', crop_size=[473, 473], transform=None, flip=False):
+        
         self.root = root
         self.crop_size = crop_size
         self.transform = transform

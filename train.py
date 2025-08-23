@@ -35,6 +35,8 @@ from utils.warmup_scheduler import SGDRScheduler
 from tqdm import tqdm
 from time import time
 
+from utils.optimizers import build_adamw
+
 def get_arguments():
     """Parse all the arguments provided from the CLI.
     Returns:
@@ -72,8 +74,9 @@ def get_arguments():
 
     parser.add_argument("--num_samples", type=int, default=-1)              #TODO CHANGED: Added
     parser.add_argument("--only_train_module", type=str, default=None)
-    parser.add_argument("--optimizer", type=str, default="sgd", help="Options: ['sgd', 'adamw']")
+    parser.add_argument("--optimizer", type=str, default="sgd", help="Options: ['sgd', 'adamw_naive', 'adamw_custom']")
     parser.add_argument("--cons_loss_type", type=str, default="hard", help="Options: ['hard', 'soft']")
+    parser.add_argument("--do_mapping", action="store_true", help="Maps LIP class labels to custom class labels.")
     return parser.parse_args()
 
 
@@ -188,10 +191,17 @@ def main():
                                  std=IMAGE_STD),
         ])
 
-    train_dataset = LIPDataSet(args.data_dir, 'train', crop_size=input_size, transform=transform, num_samples=args.num_samples)
+    train_dataset = LIPDataSet(args.data_dir, 'train', crop_size=input_size, 
+                               transform=transform, num_samples=args.num_samples,
+                               do_mapping=args.do_mapping)
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size * len(gpus),
                                    num_workers=16, shuffle=True, pin_memory=True, drop_last=True)
     print('Total training samples: {}'.format(len(train_dataset)))
+
+    #Confirm number of classes is same as mapped class labels
+    if args.do_mapping:
+        mapped_uniq_classes = len(np.unique(train_dataset.mapping_lookup))
+        assert args.num_classes == mapped_uniq_classes, f"Num of classes should be {mapped_uniq_classes}. Please modify the args."
 
     # Optimizer Initialization
     trainable = [p for p in model.parameters() if p.requires_grad]
@@ -199,8 +209,14 @@ def main():
     if args.optimizer == "sgd":
         optimizer = optim.SGD(trainable, lr=args.learning_rate, momentum=args.momentum,
                             weight_decay=args.weight_decay)
-    elif args.optimizer == "adamw":
+    elif args.optimizer == "adamw_naive":
         optimizer = optim.AdamW(trainable, lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer == "adamw_custom":
+        optimizer = build_adamw(model, 
+                                base_lr = args.learning_rate,
+                                wd = args.weight_decay,
+                                head_lr_mult=10.0,
+                                high_lr_modules=('head', 'edge', 'fusion'))
     else:
         raise ValueError
     #TODO CHANGED: Commented

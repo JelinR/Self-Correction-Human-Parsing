@@ -6,6 +6,8 @@ from collections import OrderedDict
 from PIL import Image as PILImage
 from utils.transforms import transform_parsing
 
+import yaml
+
 LABELS = ['Background', 'Hat', 'Hair', 'Glove', 'Sunglasses', 'Upper-clothes', 'Dress', 'Coat', \
           'Socks', 'Pants', 'Jumpsuits', 'Scarf', 'Skirt', 'Face', 'Left-arm', 'Right-arm', 'Left-leg',
           'Right-leg', 'Left-shoe', 'Right-shoe']
@@ -59,16 +61,40 @@ def get_confusion_matrix(gt_label, pred_label, num_classes):
     return confusion_matrix
 
 
-def compute_mean_ioU(preds, scales, centers, num_classes, datadir, input_size=[473, 473], dataset='val'):
+def compute_mean_ioU(preds, scales, centers, num_classes, datadir, 
+                     input_size=[473, 473], dataset='val',
+                     do_mapping = False):
     val_file = os.path.join(datadir, dataset + '_id.txt')
     val_id = [i_id.strip() for i_id in open(val_file)]
 
     confusion_matrix = np.zeros((num_classes, num_classes))
 
+    if do_mapping:
+        mapping_path = os.path.join(datadir, "mapping.yaml")
+        assert os.path.exists(mapping_path)
+        with open(mapping_path, "r") as f:
+            info = yaml.safe_load(f)
+
+        mapping = info["mapping"]
+        
+        #Create a lookup array for mapping IDs
+        max_old = max(mapping.keys())
+        mapping_lookup = np.arange(max_old+1)
+        for k, v in mapping.items():
+            mapping_lookup[k] = v
+        print(f"\n\nMapping IDs Done!\n")
+
     for i, pred_out in enumerate(preds):        #Shape of pred_out: (H, W)
         im_name = val_id[i]
         gt_path = os.path.join(datadir, dataset + '_segmentations', im_name + '.png')
+        if not os.path.exists(gt_path):
+            gt_path = os.path.join(datadir, dataset + '_segmentations', im_name + '_segm.png')
         gt = np.array(PILImage.open(gt_path))
+
+        #Mapping IDs
+        if do_mapping:
+            gt = mapping_lookup[gt]
+
         h, w = gt.shape
         s = scales[i]
         c = centers[i]

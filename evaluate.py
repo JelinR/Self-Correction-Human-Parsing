@@ -54,6 +54,8 @@ def get_arguments():
     parser.add_argument("--save-results", action="store_true", help="whether to save the results.")
     parser.add_argument("--flip", action="store_true", help="random flip during the test.")
     parser.add_argument("--multi-scales", type=str, default='1', help="multiple scales during the test")
+
+    parser.add_argument("--do-mapping", action="store_true", help="Map LIP class IDs to different ID values.")
     return parser.parse_args()
 
 
@@ -200,7 +202,9 @@ def main():
 
             parsing_preds.append(parsing)       #Shape: (B, H, W)
     assert len(parsing_preds) == num_samples
-    mIoU = compute_mean_ioU(parsing_preds, scales, centers, args.num_classes, args.data_dir, input_size)
+    mIoU = compute_mean_ioU(parsing_preds, scales, centers, 
+                            args.num_classes, args.data_dir, input_size,
+                            do_mapping = args.do_mapping)
     print(mIoU)
 
     save_path = f"{args.log_dir}/results.pt"

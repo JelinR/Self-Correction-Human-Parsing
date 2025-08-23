@@ -8,7 +8,9 @@ from networks.HRNet_SCHP import lite_hrnet_schp_custom, lite_hrnet_schp_30_small
                                     hrnet_schp_48, hrnet_schp_48_top, \
                                     hrnet_48_ocr
 
-from networks.ResNeSt_SCHP import ResNeSt101
+from networks.ResNeSt_SCHP import ResNeSt101, ResNeSt101_dilate_2, ResNeSt101_dilate_1
+
+from networks.SegFormer_SCHP import segformer_mit_b4, segformer_b4_ce2p, segformer_b4_mixed
 
 __factory = {
     'resnet101': resnet101,
@@ -28,7 +30,13 @@ __factory = {
     'hrnet_schp_48_top': hrnet_schp_48_top,
     'hrnet_48_ocr': hrnet_48_ocr,
 
-    'ResNeSt101': ResNeSt101
+    'ResNeSt101': ResNeSt101,                           #OS = 8
+    'ResNeSt101_dilate_2': ResNeSt101_dilate_2,         #OS = 16
+    'ResNeSt101_dilate_1': ResNeSt101_dilate_1,         #OS = 32
+
+    'segformer_mit_b4': segformer_mit_b4,
+    'segformer_b4_ce2p': segformer_b4_ce2p,
+    'segformer_b4_mixed': segformer_b4_mixed
 }
 
 

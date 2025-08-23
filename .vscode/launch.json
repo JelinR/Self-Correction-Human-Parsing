@@ -9,7 +9,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "train",
-            "python": "/mnt/anaconda3/envs/schp_mod/bin/python",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
 
             "args": [
                 "--arch", "resnet101",
@@ -81,13 +81,51 @@
             "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
 
             "args": [
-                "--arch", "ResNeSt101",
+                "--arch", "ResNeSt101_dilate_2",
                 "--batch-size", "8",
                 "--gpu", "0",
                 "--num_samples", "25",
                 "--input-size", "128,128",
                 "--log-dir", "./log/junk",
                 "--imagenet-pretrain", "None"
+            ]
+        },
+
+        {
+            "name": "Debug: SegFormer_mit_b4 + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "segformer_mit_b4",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk",
+                // "--imagenet-pretrain", "None"
+            ]
+        },
+
+        {
+            "name": "Debug: SegFormer_b4_CE2P + SCHP",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train",
+            "python": "/mnt/anaconda3/envs/schp_lite/bin/python",
+
+            "args": [
+                "--arch", "segformer_b4_ce2p",
+                "--batch-size", "8",
+                "--gpu", "0",
+                "--num_samples", "25",
+                "--input-size", "128,128",
+                "--log-dir", "./log/junk",
+                "--imagenet-pretrain", "None",
+                "--num-classes", "10",
+                "--do_mapping",
             ]
         }
     ]
