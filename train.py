@@ -35,7 +35,7 @@ from utils.warmup_scheduler import SGDRScheduler
 from tqdm import tqdm
 from time import time
 
-from utils.optimizers import build_adamw
+from utils.optimizers import build_adamw, SegCE2P_param_groups
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -74,9 +74,11 @@ def get_arguments():
 
     parser.add_argument("--num_samples", type=int, default=-1)              #TODO CHANGED: Added
     parser.add_argument("--only_train_module", type=str, default=None)
-    parser.add_argument("--optimizer", type=str, default="sgd", help="Options: ['sgd', 'adamw_naive', 'adamw_custom']")
+    parser.add_argument("--optimizer", type=str, default="sgd", help="Options: ['sgd', 'adamw_naive', 'adamw_custom', \
+                        'segce2p_phase_1', 'segce2p_phase_2']")
     parser.add_argument("--cons_loss_type", type=str, default="hard", help="Options: ['hard', 'soft']")
     parser.add_argument("--do_mapping", action="store_true", help="Maps LIP class labels to custom class labels.")
+    parser.add_argument("--reset_schp_cycle", action="store_true", help="Resets the count of schp_cycles to zero.")
     return parser.parse_args()
 
 
@@ -126,6 +128,8 @@ def main():
     
     model = DataParallelModel(AugmentCE2P)
     model.cuda()
+    # model = AugmentCE2P
+    # model.cuda()
 
     IMAGE_MEAN = AugmentCE2P.mean
     IMAGE_STD = AugmentCE2P.std
@@ -135,6 +139,7 @@ def main():
     print('input space:{}'.format(INPUT_SPACE))
 
     restore_from = args.model_restore
+    restore_last_epoch = None
     if os.path.exists(restore_from):
         print('Resume training from {}'.format(restore_from))
         checkpoint = torch.load(restore_from)
@@ -144,16 +149,8 @@ def main():
         model.load_state_dict(checkpoint['state_dict'], strict=False) #TODO CHANGED: Added strict=False
         if "epoch" in checkpoint:
             start_epoch = checkpoint["epoch"]
-
-    # total parameters
-    total_params = sum(p.numel() for p in model.parameters())
-
-    # trainable parameters
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-    print(f"\nTotal params:     {total_params:,}")
-    print(f"Trainable params: {trainable_params:,}")
-    print(f"Frozen params:    {total_params - trainable_params:,}\n")
+            restore_last_epoch = start_epoch
+            print(f"Start epoch: {start_epoch}")
 
     SCHP_AugmentCE2P = networks.init_model(args.arch, num_classes=args.num_classes, pretrained=args.imagenet_pretrain)
     schp_model = DataParallelModel(SCHP_AugmentCE2P)    #TODO Doubt
@@ -163,7 +160,7 @@ def main():
         print('Resuming schp checkpoint from {}'.format(args.schp_restore))
         schp_checkpoint = torch.load(args.schp_restore)
         schp_model_state_dict = schp_checkpoint['state_dict']
-        cycle_n = schp_checkpoint['cycle_n']
+        cycle_n = schp_checkpoint['cycle_n'] if not args.reset_schp_cycle else 0
         schp_model.load_state_dict(schp_model_state_dict)
 
     # Loss Function
@@ -201,7 +198,7 @@ def main():
     #Confirm number of classes is same as mapped class labels
     if args.do_mapping:
         mapped_uniq_classes = len(np.unique(train_dataset.mapping_lookup))
-        assert args.num_classes == mapped_uniq_classes, f"Num of classes should be {mapped_uniq_classes}. Please modify the args."
+        #assert args.num_classes == mapped_uniq_classes, f"Num of classes should be {mapped_uniq_classes}. Please modify the args."
 
     # Optimizer Initialization
     trainable = [p for p in model.parameters() if p.requires_grad]
@@ -217,8 +214,34 @@ def main():
                                 wd = args.weight_decay,
                                 head_lr_mult=10.0,
                                 high_lr_modules=('head', 'edge', 'fusion'))
+    elif args.optimizer == "segce2p_phase_1":
+        optimizer = SegCE2P_param_groups(model,
+                                         base_backbone_lr = args.learning_rate,
+                                         wd_backbone = args.weight_decay,
+                                         wd_heads = args.weight_decay,
+                                         unfreeze_backbone = False)
+    elif args.optimizer == "segce2p_phase_2":
+        optimizer = SegCE2P_param_groups(model,
+                                         base_backbone_lr = args.learning_rate,
+                                         wd_backbone = args.weight_decay,
+                                         wd_heads = args.weight_decay,
+                                         unfreeze_backbone = True)
     else:
         raise ValueError
+
+    # if os.path.exists(restore_from):
+    #     print('Loading checkpoint for optimizer from {}'.format(restore_from))
+    #     checkpoint = torch.load(restore_from)
+    #     optimizer.load_state_dict(checkpoint['optim_state_dict']) #TODO CHANGED: Added strict=False
+
+    #     for state in optimizer.state.values():
+    #         for k, v in state.items():
+    #             if isinstance(v, torch.Tensor):
+    #                 state[k] = v.to("cuda:0")
+
+    # model = DataParallelModel(AugmentCE2P)
+    # model.cuda()
+    
     #TODO CHANGED: Commented
     # optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum,
     #                       weight_decay=args.weight_decay)
@@ -228,8 +251,21 @@ def main():
                                  start_cyclical=args.schp_start, cyclical_base_lr=args.learning_rate / 2,
                                  cyclical_epoch=args.cycle_epochs)
 
+    # print("\nLR Sched last epoch: ", lr_scheduler.last_epoch)
+    # if restore_last_epoch is not None:
+    #     lr_scheduler.last_epoch = restore_last_epoch
+    # print("LR Sched last epoch: ", lr_scheduler.last_epoch, "\n")
+
     total_iters = args.epochs * len(train_loader)
     batch_iters = len(train_loader)
+
+    #Total and Trainable parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print(f"\nTotal params:     {total_params:,}")
+    print(f"Trainable params: {trainable_params:,}")
+    print(f"Frozen params:    {total_params - trainable_params:,}\n")
 
     start = timeit.default_timer()
     for epoch in range(start_epoch, args.epochs):
@@ -310,10 +346,10 @@ def main():
         with open(f"{args.log_dir}/loss_per_epoch.txt", "a" if epoch > 0 else "w") as f:
             f.write(f"{epoch}, {mean_loss}, {mean_loss_seg}, {mean_loss_edge}, {mean_loss_cons}\n")
 
-
         schp.save_schp_checkpoint({
             "epoch": epoch + 1,
-            "state_dict": model.state_dict()
+            "state_dict": model.state_dict(),
+            "optim_state_dict": optimizer.state_dict()
         }, False, args.log_dir, filename="checkpoint.pth.tar")
         
         if (epoch + 1) % (args.eval_epochs) == 0:

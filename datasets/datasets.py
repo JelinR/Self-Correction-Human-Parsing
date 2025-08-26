@@ -20,6 +20,7 @@ from torch.utils import data
 from utils.transforms import get_affine_transform
 
 import yaml
+import PIL.Image as Image
 
 
 class LIPDataSet(data.Dataset):
@@ -92,6 +93,10 @@ class LIPDataSet(data.Dataset):
 
         im_path = os.path.join(self.root, self.dataset + '_images', train_item + '.jpg')
         parsing_anno_path = os.path.join(self.root, self.dataset + '_segmentations', train_item + '.png')
+        if not os.path.exists(parsing_anno_path):
+            parsing_anno_path = os.path.join(self.root, self.dataset + '_segmentations', train_item + '_segm.png')
+        
+        assert os.path.exists(parsing_anno_path)
 
         im = cv2.imread(im_path, cv2.IMREAD_COLOR)
         h, w, _ = im.shape
@@ -104,7 +109,11 @@ class LIPDataSet(data.Dataset):
 
         if self.dataset != 'test':
             # Get pose annotation
-            parsing_anno = cv2.imread(parsing_anno_path, cv2.IMREAD_GRAYSCALE)
+            if not "DeepFashion" in self.root:
+                parsing_anno = cv2.imread(parsing_anno_path, cv2.IMREAD_GRAYSCALE)
+            else:
+                parsing_anno = np.array(Image.open(parsing_anno_path))
+            
 
             #Map class labels if needed
             if self.do_mapping:
@@ -127,6 +136,8 @@ class LIPDataSet(data.Dataset):
                         left_pos = np.where(parsing_anno == left_idx[i])
                         parsing_anno[right_pos[0], right_pos[1]] = left_idx[i]
                         parsing_anno[left_pos[0], left_pos[1]] = right_idx[i]
+
+                    
 
         trans = get_affine_transform(person_center, s, r, self.crop_size)
         input = cv2.warpAffine(
@@ -152,6 +163,7 @@ class LIPDataSet(data.Dataset):
         if self.dataset == 'val' or self.dataset == 'test':
             return input, meta
         else:
+
             label_parsing = cv2.warpAffine(
                 parsing_anno,
                 trans,
