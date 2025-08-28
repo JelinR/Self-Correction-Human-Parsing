@@ -198,7 +198,7 @@ def main():
     #Confirm number of classes is same as mapped class labels
     if args.do_mapping:
         mapped_uniq_classes = len(np.unique(train_dataset.mapping_lookup))
-        #assert args.num_classes == mapped_uniq_classes, f"Num of classes should be {mapped_uniq_classes}. Please modify the args."
+        assert args.num_classes == mapped_uniq_classes, f"Num of classes should be {mapped_uniq_classes}. Please modify the args."
 
     # Optimizer Initialization
     trainable = [p for p in model.parameters() if p.requires_grad]
