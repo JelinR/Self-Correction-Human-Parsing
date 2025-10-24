@@ -15,115 +15,179 @@ Features:
 - [x] Training and inferecne code.
 - [x] Simple yet effective extension on multi-person and video human parsing tasks.
 
-## Requirements
+The following content is relevant to the work done at ViWear to produce enhanced masks. For the source README content, please visit the source repository mentioned below. 
 
-```
-conda env create -f environment.yaml
-conda activate schp
-pip install -r requirements.txt
-```
+Source Repo : [https://github.com/GoGoDuck912/Self-Correction-Human-Parsing](https://github.com/GoGoDuck912/Self-Correction-Human-Parsing)
 
-## Simple Out-of-Box Extractor
+## Setting up the Conda Env
 
-The easiest way to get started is to use our trained SCHP models on your own images to extract human parsing representations. Here we provided state-of-the-art [trained models](https://drive.google.com/drive/folders/1uOaQCpNtosIjEL2phQKEdiYd0Td18jNo?usp=sharing) on three popular datasets. Theses three datasets have different label system, you can choose the best one to fit on your own task.
+Please follow the instructions as mentioned in the parent directory (`CatVTON_ViWear`).
 
-**LIP** ([exp-schp-201908261155-lip.pth](https://drive.google.com/file/d/1k4dllHpu0bdx38J7H28rVVLpU-kOHmnH/view?usp=sharing))
+## Setting up the Directory
 
-* mIoU on LIP validation: **59.36 %**.
+To download the checkpoints, please download the SCHP_LIP checkpoint into the checkpoints directory.
 
-* LIP is the largest single person human parsing dataset with 50000+ images. This dataset focus more on the complicated real scenarios. LIP has 20 labels, including 'Background', 'Hat', 'Hair', 'Glove', 'Sunglasses', 'Upper-clothes', 'Dress', 'Coat', 'Socks', 'Pants', 'Jumpsuits', 'Scarf', 'Skirt', 'Face', 'Left-arm', 'Right-arm', 'Left-leg', 'Right-leg', 'Left-shoe', 'Right-shoe'.
+```bash
+mkdir checkpoints
+cd checkpoints
 
-**ATR** ([exp-schp-201908301523-atr.pth](https://drive.google.com/file/d/1ruJg4lqR_jgQPj-9K0PP-L2vJERYOxLP/view?usp=sharing))
-
-* mIoU on ATR test: **82.29%**.
-
-* ATR is a large single person human parsing dataset with 17000+ images. This dataset focus more on fashion AI. ATR has 18 labels, including 'Background', 'Hat', 'Hair', 'Sunglasses', 'Upper-clothes', 'Skirt', 'Pants', 'Dress', 'Belt', 'Left-shoe', 'Right-shoe', 'Face', 'Left-leg', 'Right-leg', 'Left-arm', 'Right-arm', 'Bag', 'Scarf'.
-
-**Pascal-Person-Part** ([exp-schp-201908270938-pascal-person-part.pth](https://drive.google.com/file/d/1E5YwNKW2VOEayK9mWCS3Kpsxf-3z04ZE/view?usp=sharing))
-
-* mIoU on Pascal-Person-Part validation: **71.46** %.
-
-* Pascal Person Part is a tiny single person human parsing dataset with 3000+ images. This dataset focus more on body parts segmentation. Pascal Person Part has 7 labels, including 'Background', 'Head', 'Torso', 'Upper Arms', 'Lower Arms', 'Upper Legs', 'Lower Legs'.
-
-Choose one and have fun on your own task!
-
-To extract the human parsing representation, simply put your own image in the `INPUT_PATH` folder, then download a pretrained model and run the following command. The output images with the same file name will be saved in `OUTPUT_PATH`
-
-```
-python simple_extractor.py --dataset [DATASET] --model-restore [CHECKPOINT_PATH] --input-dir [INPUT_PATH] --output-dir [OUTPUT_PATH]
+gdown 1k4dllHpu0bdx38J7H28rVVLpU-kOHmnH
 ```
 
-**[Updated]** Here is also a [colab demo example](https://colab.research.google.com/drive/1JOwOPaChoc9GzyBi5FUEYTSaP2qxJl10?usp=sharing) for quick inference provided by [@levindabhi](https://github.com/levindabhi).
+We mainly use two datasets for training or finetuning, which are both put in the `data` directory:
 
-The `DATASET` command has three options, including 'lip', 'atr' and 'pascal'. Note each pixel in the output images denotes the predicted label number. The output images have the same size as the input ones. To better visualization, we put a palette with the output images. We suggest you to read the image with `PIL`.
+- LIP Dataset : To download the LIP dataset, please follow the instructions as provided in the source repository ( [https://github.com/GoGoDuck912/Self-Correction-Human-Parsing](https://github.com/GoGoDuck912/Self-Correction-Human-Parsing) ). If the download link is crashed, please consult the issues section. Please download this into the `data/LIP` directory.
 
-If you need not only the final parsing images, but also the feature map representations. Add `--logits` command to save the output feature maps. These feature maps are the logits before softmax layer.
+- DeepFashion-MultiModal Dataset : To download the DeepFashion-MultiModal dataset, please refer to the relevant repository ( [https://github.com/yumingj/DeepFashion-MultiModal](https://github.com/yumingj/DeepFashion-MultiModal) ). Note that we only require the image, parsing and densepose subcategories. Please download this into the `data/DeepFashion_Multi` directory.
 
-## Dataset Preparation
+## Preprocessing Dataset : DeepFashion
 
-Please download the [LIP](http://sysu-hcp.net/lip/) dataset following the below structure.
+DeepFashion contains 24 class labels, more than the LIP class set. Hence, we map the DeepFashion labels to that of LIP or even a new kind of mapping that aligns more with CatVTON's expected labels. We provide three different class mapping schemes, stored in the `mappings` directory:
 
-```commandline
-data/LIP
-|--- train_imgaes # 30462 training single person images
-|--- val_images # 10000 validation single person images
-|--- train_segmentations # 30462 training annotations
-|--- val_segmentations # 10000 training annotations
-|--- train_id.txt # training image list
-|--- val_id.txt # validation image list
+- `map_sans_torso` : Maps DeepFashion labels (in Segmentation and DensePose) to a set of classes aligning with LIP. Note that LIP does not account for torso, and is mapping to the background, which is maintained in this mapping too.
+
+- `map_with_torso.yaml` : Similar to `map_sans_torso`, but maps the torso region (obtained using the DensePose labels) to the class "Upper-Body".
+
+- `map_sep.yaml` : Aligns more with CatVTON's expected labelling scheme, where we separate the (hands vs arms) and (feet vs legs). Note that torso is included in this mapping scheme. 
+
+For a better visual understanding of these mapping schemes, please refer to the visualization section at the end. For a more interactive understanding, please refer to the `deepfashion_mapping.ipynb` notebook.
+
+
+Using either of the mapping schemes, we can generate a dataset (subset) which contains samples that follow these new class labels. Such a dataset can then be leveraged for more optimal finetuning.
+
+```bash
+python -m preprocess_deepfashion \
+--mapping_cfg mappings/df_map_sep.yaml \
+--dest_data_dir data/DeepFashion_Multi/DeepFashion_map_sep \
+--num_train_samples 2500
 ```
+
 
 ## Training
 
+For training the model, we first train on the general LIP dataset, after which we finetune on the DeepFashion dataset to zero-in on the try-on mask generation. We train on a subset of labels, ensuring proper mapping from the standard LIP labels onto the subset of merged labels. The mapping scheme can be found in `mappings/lip_map.yaml`.
+
+### LIP Training
+
+```bash
+python train.py \
+--arch segformer_mit_b4 \
+--batch-size 4 \
+--input-size 512,384 \
+--learning-rate 6e-5 \
+--weight-decay 1e-2 \
+--gpu 0 \
+--imagenet-pretrain ./pretrain_model/mit_b4.pth \
+--log-dir ./log/segformer_big/lip_train \
+--num_samples 2500 \
+--optimizer adamw_custom \
+--do_mapping \
+--lip_map_cfg mappings.lip_map.yaml \
+--num-classes 9
 ```
-python train.py 
+
+### DeepFashion Finetuning
+
+Finetuning on DeepFashion is done in two stages, ensuring gradual unfreezing of the layers, aided with layer-based learning rates. This is done in two stages.
+
+#### Stage 1
+
+Here, the backbone (MiT) is frozen, while the other modules (Decoder, Edge, Fusion) are unfrozen. This is run till convergence, after which 1 SCHP cycle is run.
+
+
+```bash
+python train.py \
+--arch segformer_mit_b4 \
+--batch-size 4 \
+--input-size 512,384 \
+--learning-rate 6e-5 \
+--weight-decay 1e-3 \
+--gpu 0 \
+--imagenet-pretrain ./pretrain_model/mit_b4.pth \
+--log-dir ./log/segformer_big/finetune_phase_1 \
+--num_samples 2500 \
+--optimizer segce2p_phase_1 \
+--model-restore ./log/segformer_big/lip_train/schp_4_checkpoint.pth.tar \
+--schp-restore ./log/segformer_big/lip_train/schp_4_checkpoint.pth.tar \
+--reset_schp_cycle \
+--data-dir ./data/DeepFashion_Multi/DeepFashion_merged/ \
+--num-classes 9
 ```
-By default, the trained model will be saved in `./log` directory. Please read the arguments for more details.
+
+#### Stage 2
+
+Here, all modules are unfrozen, with the backbone receiving a learning rate 10x lower than the other modules (Decoder, Edge, Fusion). This is run till convergence, after which 5 SCHP cycles are run.
+
+
+```bash
+python train.py \
+--arch segformer_mit_b4 \
+--batch-size 4 \
+--input-size 512,384 \
+--learning-rate 6e-5 \
+--weight-decay 1e-3 \
+--gpu 0 \
+--imagenet-pretrain ./pretrain_model/mit_b4.pth \
+--log-dir ./log/segformer_big/finetune_phase_2 \
+--num_samples 2500 \
+--optimizer segce2p_phase_2 \
+--model-restore ./log/segformer_big/finetune_phase_1/schp_3_checkpoint.pth.tar \
+--schp-restore ./log/segformer_big/finetune_phase_1/schp_3_checkpoint.pth.tar \
+--reset_schp_cycle \
+--data-dir ./data/DeepFashion_Multi/DeepFashion_merged/ \
+--num-classes 9
+```
 
 ## Evaluation
+
+To evaluate on the LIP dataset:
+
+```bash
+python -m evaluate \
+--arch segformer_mit_b4 \
+--data-dir data/LIP/ \
+--input-size 512,384 \
+--num-classes 9 \
+--log-dir ./log/eval_results/lip/segformer_big \
+--model-restore ./log/segformer_big/lip_train/schp_6_checkpoint.pth.tar
+--do-lip-mapping \
+--lip-map-cfg mappings/lip_map.yaml
 ```
-python evaluate.py --model-restore [CHECKPOINT_PATH]
+
+
+To evaluate on the DeepFashion dataset:
+
+```bash
+python -m evaluate \
+--arch segformer_mit_b4 \
+--data-dir data/DeepFashion_Multi/DeepFashion_sep/ \
+--input-size 512,384 \
+--num-classes 9 \
+--log-dir ./log/eval_results/segformer_big/df_finetune/ \
+--model-restore ./log/segformer_big/map_sep/df_finetune/finetune_torso_phase_2/schp_6_checkpoint.pth.tar
 ```
-CHECKPOINT_PATH should be the path of trained model.
 
-## Extension on Multiple Human Parsing
 
-Please read [MultipleHumanParsing.md](./mhp_extension/README.md) for more details.
+Experimenting with different model architectures and backbones, we finally decided to adopt the SegFormer as the main backbone, with a few minor changes to the rest of the pipeline. Some initial results (before mapping to merged classes) are shown below.
 
-## Citation
+![df_test_results](demo/df_test_results.png)
 
-Please cite our work if you find this repo useful in your research.
+The optimal configuration (SegFormer_b4_MLP) was chosen as it provided one the best results, while being the most lightweight among its group. This was then properly trained and finetuned on the merged class labels.
 
-```latex
-@article{li2020self,
-  title={Self-Correction for Human Parsing}, 
-  author={Li, Peike and Xu, Yunqiu and Wei, Yunchao and Yang, Yi},
-  journal={IEEE Transactions on Pattern Analysis and Machine Intelligence}, 
-  year={2020},
-  doi={10.1109/TPAMI.2020.3048039}}
-```
 
 ## Visualization
 
-* Source Image.
-![demo](./demo/demo.jpg)
-* LIP Parsing Result.
-![demo-lip](./demo/demo_lip.png)
-* ATR Parsing Result.
-![demo-atr](./demo/demo_atr.png)
-* Pascal-Person-Part Parsing Result.
-![demo-pascal](./demo/demo_pascal.png)
-* Source Image.
-![demo](./mhp_extension/demo/demo.jpg)
-* Instance Human Mask.
-![demo-lip](./mhp_extension/demo/demo_instance_human_mask.png)
-* Global Human Parsing Result.
-![demo-lip](./mhp_extension/demo/demo_global_human_parsing.png)
-* Multiple Human Parsing Result.
-![demo-lip](./mhp_extension/demo/demo_multiple_human_parsing.png)
+### DeepFashion-MultiModal Data Sample
 
+![df_sample](demo/df_data_sample.png)
 
-## Related
-Our code adopts the [InplaceSyncBN](https://github.com/mapillary/inplace_abn) to save gpu memory cost.
+### Mapping Schemes
 
-There is also a [PaddlePaddle](https://github.com/PaddlePaddle/PaddleSeg/tree/develop/contrib/ACE2P) Implementation of this project.
+Scheme : map_sans_torso
+![map_sans_torso](demo/df_map_sans_torso.png)
+
+Scheme : map_with_torso
+![map_with_torso](demo/df_map_with_torso.png)
+
+Scheme : map_sep
+![map_sep](demo/df_map_sep.png)

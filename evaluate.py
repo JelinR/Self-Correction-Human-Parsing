@@ -55,7 +55,8 @@ def get_arguments():
     parser.add_argument("--flip", action="store_true", help="random flip during the test.")
     parser.add_argument("--multi-scales", type=str, default='1', help="multiple scales during the test")
 
-    parser.add_argument("--do-mapping", action="store_true", help="Map LIP class IDs to different ID values.")
+    parser.add_argument("--do-lip-mapping", action="store_true", help="Map LIP class IDs to different ID values.")
+    parser.add_argument("--lip-map-cfg", type=str, default="mappings/lip_map.yaml")
     return parser.parse_args()
 
 
@@ -204,7 +205,8 @@ def main():
     assert len(parsing_preds) == num_samples
     mIoU = compute_mean_ioU(parsing_preds, scales, centers, 
                             args.num_classes, args.data_dir, input_size,
-                            do_mapping = args.do_mapping)
+                            do_lip_mapping = args.do_lip_mapping,
+                            lip_map_cfg = args.lip_map_cfg)
     print(mIoU)
 
     save_path = f"{args.log_dir}/results.pt"

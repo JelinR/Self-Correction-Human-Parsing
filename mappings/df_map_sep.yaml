@@ -1,0 +1,138 @@
+## We want to map DeepFashion classes (DensePose, Segm) to a new set of classes (LIP Merged)
+## Here, the mapping deviates from LIP classes. It separates between hands and upper body, and also between feet and lower body. 
+## This is done in order to orient with CatVTON's masking pipeline.
+## Note: Torso is included in this mapping.
+
+
+# -------- Denspose, Segm, LIP Merged Classes -------
+
+densepose_classes:
+    0:  "bg"
+
+    # torso & face
+    1:  "torso_skin"   #Does not include neck
+    2:  "torso_skin"   #Does not include neck
+    23: "face"
+    24: "face"
+
+    # hands
+    3:  "R_hand"
+    4:  "L_hand"
+
+    # feet
+    5:  "R_foot"
+    6:  "L_foot"
+
+    # upper legs (thighs) & lower legs (calves)
+    7:  "R_leg"   # right thigh (one of the two charts)
+    9:  "R_leg"
+    8:  "L_leg"   # left thigh
+    10: "L_leg"
+    11: "R_leg"   # right calf
+    13: "R_leg"
+    12: "L_leg"   # left calf
+    14: "L_leg"
+
+    # upper arms & forearms (inside/outside charts collapsed)
+    15: "L_arm"   # left upper arm (inside/outside)
+    17: "L_arm"
+    16: "R_arm"   # right upper arm
+    18: "R_arm"
+    19: "L_arm"   # left forearm
+    21: "L_arm"
+    20: "R_arm"   # right forearm
+    22: "R_arm"
+
+segm_classes:
+  0: 'Bkg'
+  1: 'Top'
+  2: 'Outer'
+  3: 'Skirt'
+  4: 'Dress'
+  5: 'Pants'
+  6: 'Leggings'
+  7: 'Headwear'
+  8: 'Eyeglass'
+  9: 'Neckwear'
+  10: 'Belt'
+  11: 'Footwear'
+  12: 'Bag'
+  13: 'Hair'
+  14: 'Face'
+  15: 'Skin'
+  16: 'Ring'
+  17: 'Wrist wearing'
+  18: 'Socks'
+  19: 'Gloves'
+  20: 'Necklace'
+  21: 'Rompers'
+  22: 'Earrings'
+  23: 'Tie'
+
+lip_merged_classes: 
+  0: 'Bkg'
+  1: 'Upper-Face'
+  2: 'Face'
+  3: 'Arm'
+  4: 'Leg'
+  5: 'Upper-clothes'
+  6: 'One-piece'
+  7: 'Lower-clothes'
+  8: 'Shoe'
+
+
+# ------- Mapping DensePose to LIP Merged --------
+
+densepose_to_merged:
+    0 : 0           #Bkg        -> Bkg
+    1 : 5           #Torso-skin -> Upper-Clothes
+    2 : 5           #Torso-skin -> Upper-Clothes 
+    3 : 3           #R_hand     -> Arm
+    4 : 3           #L_hand     -> Arm
+    5 : 4           #R_foot     -> Leg  (Same as in LIP)
+    6 : 4           #L_foot     -> Leg  (Same as in LIP)
+    7 : 7           #Leg parts  -> Lower clothes
+    8 : 7          
+    9 : 7
+    10: 7
+    11: 7
+    12: 7
+    13: 7
+    14: 7
+    15: 5          #Arm parts  -> Upper-Clothes
+    16: 5
+    17: 5
+    18: 5
+    19: 5
+    20: 5
+    21: 5
+    22: 5
+    23: 2          #Face parts -> Face (Includes neck)
+    24: 2
+
+
+segm_to_merged:
+  0 : 0   #Bkg      -> Bkg
+  1 : 5   #Top      -> Upper-clothes
+  2 : 5   #Outer    -> Upper-clothes
+  3 : 7   #Skirt    -> Lower-clothes
+  4 : 6   #Dress    -> One-piece
+  5 : 7   #Pants    -> Lower-clothes
+  6 : 7   #Leggings -> Lower-clothes
+  7 : 1   #Headwear -> Upper-Face
+  8 : 2   #Eyeglass -> Face
+  9 : 2   #Neckwear -> Face             
+  10: 7   #Belt     -> Lower-clothes
+  11: 8   #Footwear -> Shoe
+  12: 0   #Bag      -> Background
+  13: 1   #Hair     -> Upper-face
+  14: 2   #Face     -> Face
+  15: 15  #Skin     -> Skin            #For now, mapped to skin. Will be separated during preprocessing.
+  16: 3   #Ring     -> Arm
+  17: 5   #Wrist..  -> Upper Clothes 
+  18: 7   #Socks    -> Lower Clothes
+  19: 3   #Gloves   -> Arm
+  20: 2   #Necklace -> Face             
+  21: 6   #Rompers  -> One-piece
+  22: 2   #Earrings -> Face             
+  23: 5    #Tie      -> Upper-clothes

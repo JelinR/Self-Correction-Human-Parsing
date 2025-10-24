@@ -15,6 +15,8 @@ LABELS = ['Background', 'Hat', 'Hair', 'Glove', 'Sunglasses', 'Upper-clothes', '
 
 # LABELS = ['Background', 'Head', 'Torso', 'Upper Arms', 'Lower Arms', 'Upper Legs', 'Lower Legs']
 
+LIP_MAP_CFG = "mappings/lip_map.yaml"
+
 def get_palette(num_cls):
     """ Returns the color map for visualizing the segmentation mask.
     Args:
@@ -63,19 +65,20 @@ def get_confusion_matrix(gt_label, pred_label, num_classes):
 
 def compute_mean_ioU(preds, scales, centers, num_classes, datadir, 
                      input_size=[473, 473], dataset='val',
-                     do_mapping = False):
+                     do_lip_mapping = False,
+                     lip_map_cfg = LIP_MAP_CFG):
     val_file = os.path.join(datadir, dataset + '_id.txt')
     val_id = [i_id.strip() for i_id in open(val_file)]
 
     confusion_matrix = np.zeros((num_classes, num_classes))
 
-    if do_mapping:
-        mapping_path = os.path.join(datadir, "mapping.yaml")
+    if do_lip_mapping:      #Only for LIP mapping. DeepFashion data is already mapped through preprocessing.
+        mapping_path = os.path.join(lip_map_cfg)
         assert os.path.exists(mapping_path)
         with open(mapping_path, "r") as f:
             info = yaml.safe_load(f)
 
-        mapping = info["mapping"]
+        mapping = info["lip_to_merged"]
         
         #Create a lookup array for mapping IDs
         max_old = max(mapping.keys())

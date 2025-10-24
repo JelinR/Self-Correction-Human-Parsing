@@ -1,0 +1,57 @@
+## Mapping LIP classes to Merged classes
+
+lip_classes:
+  0: 'Bkg'
+  1: 'Hat'
+  2: 'Hair'
+  3: 'Gloves'
+  4: 'Sunglasses'
+  5: 'Upper-clothes'
+  6: 'Dress'
+  7: 'Coat'
+  8: 'Socks'
+  9: 'Pants'
+  10: 'Jumpsuits'
+  11: 'Scarf'
+  12: 'Skirt'
+  13: 'Face'
+  14: 'Left-arm'
+  15: 'Right-arm'
+  16: 'Left-leg'
+  17: 'Right-leg'
+  18: 'Left-shoe'
+  19: 'Right-shoe'
+
+lip_merged_classes:
+  0: 'Bkg'
+  1: 'Upper-Face'
+  2: 'Face'
+  3: 'Arm'
+  4: 'Leg'
+  5: 'Upper-clothes'
+  6: 'One-piece'
+  7: 'Lower-clothes'
+  8: 'Shoe'
+
+
+lip_to_merged:
+  0: 0    #Background -> Background
+  1: 1    #Hat        -> Upper-Face
+  2: 1    #Hair       -> Upper-Face
+  3: 3    #Gloves     -> Arm
+  4: 2    #Sunglasses -> Face
+  5: 5    #Upper-clth -> Upper-clothes
+  6: 6    #Dress      -> One-piece
+  7: 5    #Coat       -> Upper-clothes
+  8: 4    #Socks      -> Leg
+  9: 7    #Pants      -> Lower-clothes
+  10: 6   #Jumpsuits  -> One-piece
+  11: 5   #Scarf      -> Upper-clothes
+  12: 7   #Skirt      -> Lower-clothes
+  13: 2   #Face       -> Face
+  14: 3   #Left-arm   -> Arm
+  15: 3   #Right-arm  -> Arm
+  16: 4   #Left-leg   -> Leg
+  17: 4   #Right-leg  -> Leg
+  18: 8   #Left-shoe  -> Shoe
+  19: 8   #Right-shoe -> Shoe

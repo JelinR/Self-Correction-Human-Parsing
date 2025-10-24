@@ -78,6 +78,7 @@ def get_arguments():
                         'segce2p_phase_1', 'segce2p_phase_2']")
     parser.add_argument("--cons_loss_type", type=str, default="hard", help="Options: ['hard', 'soft']")
     parser.add_argument("--do_mapping", action="store_true", help="Maps LIP class labels to custom class labels.")
+    parser.add_argument("--lip_map_cfg", type=str, default="mappings/lip_map.yaml")
     parser.add_argument("--reset_schp_cycle", action="store_true", help="Resets the count of schp_cycles to zero.")
     return parser.parse_args()
 
@@ -190,7 +191,7 @@ def main():
 
     train_dataset = LIPDataSet(args.data_dir, 'train', crop_size=input_size, 
                                transform=transform, num_samples=args.num_samples,
-                               do_mapping=args.do_mapping)
+                               do_mapping=args.do_mapping, lip_map_path=args.lip_map_cfg)
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size * len(gpus),
                                    num_workers=16, shuffle=True, pin_memory=True, drop_last=True)
     print('Total training samples: {}'.format(len(train_dataset)))
